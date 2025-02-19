@@ -28,7 +28,7 @@ struct metrics {
     float sum_turnaround_time;
     float sum_response_time;
     float sum_wait_time; 
-    struct job_stats* stats_head;
+    struct job_stats** stats_head;
 };
 
 struct job_stats {
@@ -71,7 +71,8 @@ struct job* handler_RR(struct job**);
 int remove_finished_jobs(struct job**);
 void shift_job_queue(struct job**);
 void add_new_jobs(struct job**, struct job**, int);
-void handle_run(struct job*, int, struct metrics*, struct job*(struct job**));
+void handle_run(struct job**, int, struct metrics*, struct job*(struct job**));
 
 /* Metrics Handler*/
+void place_in_stats_queue(struct job_stats**, struct job_stats*);
 void analyze_run(struct metrics*, char*);
