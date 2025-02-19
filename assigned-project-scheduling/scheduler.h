@@ -55,7 +55,7 @@ void copy_job(struct job* dst, struct job* src) {
     dst->original_length= src->length;  
     dst->start_time     = -1;    
     dst->wait_time      = 0;      
-    dst->last_run       = -1;
+    dst->last_run       = 0;
 }
 /* Environment Setup*/
 struct args* arg_parse(char**);
@@ -72,4 +72,6 @@ int remove_finished_jobs(struct job**);
 void shift_job_queue(struct job**);
 void add_new_jobs(struct job**, struct job**, int);
 void handle_run(struct job*, int, struct metrics*, struct job*(struct job**));
-void analyze_run(struct metrics*);
+
+/* Metrics Handler*/
+void analyze_run(struct metrics*, char*);
