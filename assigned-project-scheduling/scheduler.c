@@ -211,8 +211,7 @@ void handle_run(struct job** job_head, int timeslice, struct metrics* run_metric
     int jobs_total = count_jobs(*job_head);
 
     struct job** job_queue = malloc(sizeof(struct job*));
-    struct job_stats** stats_head = malloc(sizeof(struct job_stats*));
-    run_metrics->stats_head = stats_head;
+    struct job_stats* stats_head = NULL;
     add_new_jobs(job_queue, job_head, sim_time); 
     while(jobs_run < jobs_total) {
         // print_job_queue(job_queue);
@@ -243,7 +242,20 @@ void handle_run(struct job** job_head, int timeslice, struct metrics* run_metric
                 stats->response_time = job_curr->start_time - job_curr->arrival_time;
                 stats->turnaround_time = sim_time - job_curr->arrival_time;
                 stats->wait_time = job_curr->wait_time;
-                place_in_stats_queue(stats_head, stats);
+                stats->next = NULL;
+
+                // Insert into stats list in order of job ID
+                if (stats_head == NULL || stats_head->id > stats->id) {
+                    stats->next = stats_head;
+                    stats_head = stats;
+                } else {
+                    struct job_stats* current = stats_head;
+                    while (current->next != NULL && current->next->id < stats->id) {
+                        current = current->next;
+                    }
+                    stats->next = current->next;
+                    current->next = stats;
+                }
                 run_metrics->sum_response_time += stats->response_time;
                 run_metrics->sum_turnaround_time += stats->turnaround_time;
                 run_metrics->sum_wait_time += stats->wait_time;
