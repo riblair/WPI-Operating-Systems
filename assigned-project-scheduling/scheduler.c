@@ -203,6 +203,24 @@ void print_job_queue(struct job** job_queue) {
     printf("End of Job Q\n");
 }
 
+void insert_stats_sorted(struct job_stats** head, struct job_stats* new_stats) {
+    struct job_stats* current;
+    
+    // check if empty 
+    if (*head == NULL || (*head)->id > new_stats->id) {
+        new_stats->next = *head;
+        *head = new_stats;
+        return;
+    }
+    current = *head;
+    while (current->next != NULL && current->next->id < new_stats->id) {
+        current = current->next;
+    }
+    // Insert the new node
+    new_stats->next = current->next;
+    current->next = new_stats;
+}
+
 void handle_run(struct job** job_head, int timeslice, struct metrics* run_metrics, struct job* policy_func(struct job**)) {
     int sim_time = 0, runtime;
     struct job* job_curr;
@@ -211,7 +229,6 @@ void handle_run(struct job** job_head, int timeslice, struct metrics* run_metric
     int jobs_total = count_jobs(*job_head);
 
     struct job** job_queue = malloc(sizeof(struct job*));
-    struct job_stats* stats_head = NULL;
     add_new_jobs(job_queue, job_head, sim_time); 
     while(jobs_run < jobs_total) {
         // print_job_queue(job_queue);
@@ -221,11 +238,16 @@ void handle_run(struct job** job_head, int timeslice, struct metrics* run_metric
             add_new_jobs(job_queue, job_head, sim_time);
         }
         else {  
-            job_curr->wait_time += (sim_time - job_curr->last_run);
             // setting start time 
             if (job_curr->start_time == -1) {
                 job_curr->start_time = sim_time;
+                job_curr->wait_time = sim_time - job_curr->arrival_time;
             }
+
+            if (job_curr->last_run != -1) {
+                job_curr->wait_time += sim_time - job_curr->last_run;  
+            }
+            job_curr->last_run = sim_time;
             runtime = timeslice ? MIN(timeslice, job_curr->length) : job_curr->length;
             job_curr->length -= runtime;
 
@@ -237,25 +259,14 @@ void handle_run(struct job** job_head, int timeslice, struct metrics* run_metric
             add_new_jobs(job_queue, job_head, sim_time);
             if(job_curr->length == 0) {
                 // job is done configure the stats 
-                struct job_stats* stats = malloc(sizeof(struct job_stats));
-                stats->id = job_curr->id; // this could be an unordered ID
+                struct job_stats* stats = malloc(sizeof(struct job_stats)); 
+                stats->id = job_curr->id;
                 stats->response_time = job_curr->start_time - job_curr->arrival_time;
                 stats->turnaround_time = sim_time - job_curr->arrival_time;
                 stats->wait_time = job_curr->wait_time;
                 stats->next = NULL;
-
                 // Insert into stats list in order of job ID
-                if (stats_head == NULL || stats_head->id > stats->id) {
-                    stats->next = stats_head;
-                    stats_head = stats;
-                } else {
-                    struct job_stats* current = stats_head;
-                    while (current->next != NULL && current->next->id < stats->id) {
-                        current = current->next;
-                    }
-                    stats->next = current->next;
-                    current->next = stats;
-                }
+                insert_stats_sorted(run_metrics->stats_head, stats);
                 run_metrics->sum_response_time += stats->response_time;
                 run_metrics->sum_turnaround_time += stats->turnaround_time;
                 run_metrics->sum_wait_time += stats->wait_time;
@@ -319,6 +330,8 @@ int main(int argc, char* argv[]) {
     run_metrics->num_jobs = count_jobs(job_head);
     
     struct job* (*policy_func)(struct job**);
+    run_metrics->stats_head = malloc(sizeof(struct job_stats*));
+    *(run_metrics->stats_head) = NULL;
     
     if(!strncmp("FIFO", args->policy, 4)) policy_func = handler_FIFO;
     else if(!strncmp("SJF", args->policy, 3)) policy_func = handler_SJF;

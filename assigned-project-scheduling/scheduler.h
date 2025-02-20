@@ -55,7 +55,7 @@ void copy_job(struct job* dst, struct job* src) {
     dst->original_length= src->length;  
     dst->start_time     = -1;    
     dst->wait_time      = 0;      
-    dst->last_run       = 0;
+    dst->last_run       = -1;
 }
 /* Environment Setup*/
 struct args* arg_parse(char**);
