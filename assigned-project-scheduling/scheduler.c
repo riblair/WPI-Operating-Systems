@@ -203,30 +203,26 @@ void print_job_queue(struct job** job_queue) {
     printf("End of Job Q\n");
 }
 
-
-void handle_run(struct job* job_head, int timeslice, struct metrics* run_metrics, struct job* policy_func(struct job**)) {
+void handle_run(struct job** job_head, int timeslice, struct metrics* run_metrics, struct job* policy_func(struct job**)) {
     int sim_time = 0, runtime;
     struct job* job_curr;
 
     int jobs_run = 0;
-    int jobs_total = count_jobs(job_head);
+    int jobs_total = count_jobs(*job_head);
 
     struct job** job_queue = malloc(sizeof(struct job*));
-    struct job_stats* stats_head = NULL;
-    add_new_jobs(job_queue, &job_head, sim_time); 
+    struct job_stats** stats_head = malloc(sizeof(struct job_stats*));
+    run_metrics->stats_head = stats_head;
+    add_new_jobs(job_queue, job_head, sim_time); 
     while(jobs_run < jobs_total) {
         // print_job_queue(job_queue);
         job_curr = policy_func(job_queue);
         if(job_curr == NULL) {
             sim_time++;
-            add_new_jobs(job_queue, &job_head, sim_time);
+            add_new_jobs(job_queue, job_head, sim_time);
         }
         else {  
-            /* Run job*/
-            // adding wait time 
-            if (job_curr->last_run != -1){
-                job_curr->wait_time += (sim_time - job_curr->last_run);
-            }
+            job_curr->wait_time += (sim_time - job_curr->last_run);
             // setting start time 
             if (job_curr->start_time == -1) {
                 job_curr->start_time = sim_time;
@@ -239,29 +235,15 @@ void handle_run(struct job* job_head, int timeslice, struct metrics* run_metrics
             fflush(stdout);
             job_curr->last_run = sim_time + runtime; 
             sim_time += runtime;
-            add_new_jobs(job_queue, &job_head, sim_time);
+            add_new_jobs(job_queue, job_head, sim_time);
             if(job_curr->length == 0) {
                 // job is done configure the stats 
                 struct job_stats* stats = malloc(sizeof(struct job_stats));
-                stats->id = job_curr->id;
+                stats->id = job_curr->id; // this could be an unordered ID
                 stats->response_time = job_curr->start_time - job_curr->arrival_time;
                 stats->turnaround_time = sim_time - job_curr->arrival_time;
                 stats->wait_time = job_curr->wait_time;
-                stats->next = NULL;
-
-                // Insert into stats list in order of job ID
-                if (stats_head == NULL || stats_head->id > stats->id) {
-                    stats->next = stats_head;
-                    stats_head = stats;
-                } else {
-                    // Find correct position to insert
-                    struct job_stats* current = stats_head;
-                    while (current->next != NULL && current->next->id < stats->id) {
-                        current = current->next;
-                    }
-                    stats->next = current->next;
-                    current->next = stats;
-                }
+                place_in_stats_queue(stats_head, stats);
                 run_metrics->sum_response_time += stats->response_time;
                 run_metrics->sum_turnaround_time += stats->turnaround_time;
                 run_metrics->sum_wait_time += stats->wait_time;
@@ -273,14 +255,13 @@ void handle_run(struct job* job_head, int timeslice, struct metrics* run_metrics
             }
         }
     }
-    run_metrics->stats_head = stats_head;
 }
 
-void analyze_run(struct metrics* run_metrics) {
-    printf("Begin analyzing RR:\n"); 
-    struct job_stats* stats = run_metrics->stats_head;
+void analyze_run(struct metrics* run_metrics, char* policy) {
+    printf("Begin analyzing %s:\n", policy); 
+    struct job_stats* stats = *run_metrics->stats_head;
     while (stats != NULL) {
-        printf("Job %d -- Response time: %d Turnaround: %d Wait: %d\n",
+        printf("Job %d -- Response time: %d  Turnaround: %d  Wait: %d\n",
                stats->id,
                stats->response_time,
                stats->turnaround_time,
@@ -292,8 +273,8 @@ void analyze_run(struct metrics* run_metrics) {
     float avg_response = run_metrics->sum_response_time / run_metrics->num_jobs;
     float avg_turnaround = run_metrics->sum_turnaround_time / run_metrics->num_jobs;
     float avg_wait = run_metrics->sum_wait_time / run_metrics->num_jobs;
-    printf("Average -- Response: %f Turnaround %f Wait %f\n", avg_response, avg_turnaround, avg_wait);
-    printf("End analyzing RR.\n");
+    printf("Average -- Response: %.2f  Turnaround %.2f  Wait %.2f\n", avg_response, avg_turnaround, avg_wait);
+    printf("End analyzing %s.\n", policy);
     return;
 }
 
@@ -335,8 +316,8 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
     printf("Execution trace with %s:\n", args->policy);
-    handle_run(job_head, args->timeslice, run_metrics, policy_func);
+    handle_run(&job_head, args->timeslice, run_metrics, policy_func);
     printf("End of execution with %s.\n", args->policy);
-    if(args->analysis_mode) analyze_run(run_metrics);
+    if(args->analysis_mode) analyze_run(run_metrics, args->policy);
     return 0;
 }

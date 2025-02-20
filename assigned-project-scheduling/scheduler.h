@@ -28,7 +28,7 @@ struct metrics {
     float sum_turnaround_time;
     float sum_response_time;
     float sum_wait_time; 
-    struct job_stats* stats_head;
+    struct job_stats** stats_head;
 };
 
 struct job_stats {
@@ -55,7 +55,7 @@ void copy_job(struct job* dst, struct job* src) {
     dst->original_length= src->length;  
     dst->start_time     = -1;    
     dst->wait_time      = 0;      
-    dst->last_run       = -1;
+    dst->last_run       = 0;
 }
 /* Environment Setup*/
 struct args* arg_parse(char**);
@@ -71,5 +71,8 @@ struct job* handler_RR(struct job**);
 int remove_finished_jobs(struct job**);
 void shift_job_queue(struct job**);
 void add_new_jobs(struct job**, struct job**, int);
-void handle_run(struct job*, int, struct metrics*, struct job*(struct job**));
-void analyze_run(struct metrics*);
+void handle_run(struct job**, int, struct metrics*, struct job*(struct job**));
+
+/* Metrics Handler*/
+void place_in_stats_queue(struct job_stats**, struct job_stats*);
+void analyze_run(struct metrics*, char*);
