@@ -93,15 +93,18 @@ struct job* handler_SJF(struct job** job_queue) {
 
 /* 
     RR Selects jobs on a rotating basis. 
-    Assuptions: 
-        The first element is always the one that is next to be queued
-        Queued jobs that do not finish will be pushed to the back
-        Finished jobs will be removed from the queue
 */
 struct job* handler_RR(struct job** job_queue) {
-    return *job_queue;
+    /* iterate until we get to the next_to_run element*/
+    struct job* job_iter = *job_queue;
+    while (job_iter != NULL && !job_iter->next_to_run) {
+        job_iter = job_iter->next;
+    }
+    if(job_iter == NULL) {
+        return *job_queue;
+    }
+    return job_iter;
 }
-
 
 int remove_finished_jobs(struct job** job_queue) {
     if(*job_queue == NULL) {
@@ -141,53 +144,34 @@ int remove_finished_jobs(struct job** job_queue) {
     return removed;
 }
 
+/* 
+    Find the job with the next_to_run bit, and move it to the next element;
+*/
 void shift_job_queue(struct job** job_queue) {
     if(*job_queue == NULL) {
         return;
     }
-    struct job* job_q_iter = *job_queue;
-    // make job_q_iter_end point to last element
-    while(job_q_iter->next != NULL) {
-        job_q_iter = job_q_iter->next;
+    struct job* job_iter = *job_queue;
+    while(job_iter != NULL && !job_iter->next_to_run) {
+        job_iter = job_iter->next;
     }
-    /* Shift first element to end of queue*/
-    // Not single element queue
-    if(job_q_iter != *job_queue) {
-        // shift first element of queue to the end
-        struct job* tmp = *job_queue;
-        job_q_iter->next = tmp;
-        *job_queue = tmp->next;
-        tmp->next = NULL;
+    /* job_iter is null, no next_to_run element was found. This only happens when the queue is 1 element long*/
+    if(job_iter == NULL) {
+        job_iter = *job_queue;
+        if(job_iter->next != NULL) {
+            job_iter->next->next_to_run = 1;
+        }
     }
-}
-/* Add new jobs to end of queue*/
-void add_new_jobs(struct job** job_queue, struct job** job_head, int sim_time) {
-    struct job* job_head_iter = *job_head;
-    struct job* job_q_iter = *job_queue;
-    // make job_q_iter_end point to last element
-    if(job_q_iter != NULL) {
-        while(job_q_iter->next != NULL) job_q_iter = job_q_iter->next;
+    /* the last element was just ran */
+    else if(job_iter->next == NULL) {
+        job_iter->next_to_run = 0;
+        job_iter = *job_queue;
+        job_iter->next_to_run = 1;
     }
-
-
-    /* scan through job_head for new unadded elements*/
-    while(job_head_iter != NULL) {
-        if(!job_head_iter->scheduled && job_head_iter->arrival_time <= sim_time) {
-                job_head_iter->scheduled = 1;
-                // make copy and append to end of queue
-                struct job* tmp = malloc(sizeof(struct job));
-                copy_job(tmp, job_head_iter);
-                tmp->next = NULL; //dont want to copy the next val
-                if(*job_queue == NULL) { // empty queue
-                    *job_queue = tmp;
-                    job_q_iter = *job_queue;
-                }
-                else { // append to next and iterate 
-                    job_q_iter->next = tmp;
-                    job_q_iter = tmp;
-                }
-            }
-        job_head_iter = job_head_iter->next;
+    else {
+        job_iter->next_to_run = 0;
+        job_iter = job_iter->next;
+        job_iter->next_to_run = 1;
     }
 }
 
@@ -201,6 +185,39 @@ void print_job_queue(struct job** job_queue) {
         job_iter = job_iter->next;
     }
     printf("End of Job Q\n");
+}
+
+/* Add new jobs to end of queue*/
+void add_new_jobs(struct job** job_queue, struct job** job_head, int sim_time) {
+    struct job* job_head_iter = *job_head;
+    struct job* job_q_iter = *job_queue;
+    // make job_q_iter_end point to last element
+    if(job_q_iter != NULL) {
+        while(job_q_iter->next != NULL) job_q_iter = job_q_iter->next;
+    }
+
+    /* scan through job_head for new unadded elements*/
+    while(job_head_iter != NULL) {
+        if(!job_head_iter->scheduled && job_head_iter->arrival_time <= sim_time) {
+                job_head_iter->scheduled = 1;
+                // make copy and append to end of queue
+                struct job* tmp = malloc(sizeof(struct job));
+                copy_job(tmp, job_head_iter);
+                tmp->next = NULL; 
+                //dont want to copy the next val
+                if(*job_queue == NULL) { // empty queue
+                    *job_queue = tmp;
+                    job_q_iter = *job_queue;
+                }
+                else { // append to next and iterate 
+                    job_q_iter->next = tmp;
+                    job_q_iter = tmp;
+                }
+                // printf("[t=%d] Added job %d\n", sim_time, tmp->id);
+                // print_job_queue(job_queue);
+            }
+        job_head_iter = job_head_iter->next;
+    }
 }
 
 void insert_stats_sorted(struct job_stats** head, struct job_stats* new_stats) {
@@ -231,7 +248,6 @@ void handle_run(struct job** job_head, int timeslice, struct metrics* run_metric
     struct job** job_queue = malloc(sizeof(struct job*));
     add_new_jobs(job_queue, job_head, sim_time); 
     while(jobs_run < jobs_total) {
-        // print_job_queue(job_queue);
         job_curr = policy_func(job_queue);
         if(job_curr == NULL) {
             sim_time++;
@@ -257,6 +273,7 @@ void handle_run(struct job** job_head, int timeslice, struct metrics* run_metric
             job_curr->last_run = sim_time + runtime; 
             sim_time += runtime;
             add_new_jobs(job_queue, job_head, sim_time);
+            shift_job_queue(job_queue);
             if(job_curr->length == 0) {
                 // job is done configure the stats 
                 struct job_stats* stats = malloc(sizeof(struct job_stats)); 
@@ -272,9 +289,6 @@ void handle_run(struct job** job_head, int timeslice, struct metrics* run_metric
                 run_metrics->sum_wait_time += stats->wait_time;
                 remove_finished_jobs(job_queue);   
                 jobs_run++;
-            }
-            else {
-                shift_job_queue(job_queue);
             }
         }
     }
