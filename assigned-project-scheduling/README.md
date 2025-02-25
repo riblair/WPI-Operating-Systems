@@ -9,7 +9,7 @@ rpblair@wpi.edu
 
 # Results
     The average time for a context switch came to be around 10 +-2 micro seconds by our measurements. 
-    ![Context_Switch_Photo](./time.png) 
+![Context_Switch_Photo](./time.png) 
 
 # Discussion
     We are measuring the aggregate time taken to perform 1000 actions that include context switching. There are several other instructions that get generated such as setting up registers for read() and write() syscalls, or the time taken to call fork(). Both of these add additional delays to our measurements which muddle the true time taken for a context switch.
