@@ -14,8 +14,8 @@ struct job {
     int arrival_time;
     int length;
     int scheduled;
-    // other such neccesities?
-    // def need some for metrics...
+    int next_to_run;
+    /* metrics information */
     int original_length;  
     int start_time;      
     int wait_time;       
@@ -47,15 +47,16 @@ struct args {
 };
 
 void copy_job(struct job* dst, struct job* src) {
-    dst->id             = src->id;
-    dst->arrival_time   = src->arrival_time;
-    dst->length         = src->length;
-    dst->scheduled      = src->scheduled;
-    dst->next           = src->next;
-    dst->original_length= src->length;  
-    dst->start_time     = -1;    
-    dst->wait_time      = 0;      
-    dst->last_run       = -1;
+    dst->id                 = src->id;
+    dst->arrival_time       = src->arrival_time;
+    dst->length             = src->length;
+    dst->scheduled          = src->scheduled;
+    dst->next               = src->next;
+    dst->original_length    = src->length;  
+    dst->start_time         = -1;    
+    dst->wait_time          = 0;      
+    dst->last_run           = -1;
+    dst->next_to_run        = 0;
 }
 /* Environment Setup*/
 struct args* arg_parse(char**);
@@ -70,9 +71,10 @@ struct job* handler_RR(struct job**);
 /* Run handlers*/
 int remove_finished_jobs(struct job**);
 void shift_job_queue(struct job**);
+void insert_job_sorted(struct job**, struct job*);
 void add_new_jobs(struct job**, struct job**, int);
 void handle_run(struct job**, int, struct metrics*, struct job*(struct job**));
 
 /* Metrics Handler*/
-void place_in_stats_queue(struct job_stats**, struct job_stats*);
+void insert_stats_sorted(struct job_stats**, struct job_stats*);
 void analyze_run(struct metrics*, char*);
