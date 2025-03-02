@@ -156,8 +156,9 @@ void wfree(void *ptr) {
     printf("... chunk of size %zu\n", chunk->size);
 
     chunk->is_free = 1;
+    ptr = chunk; 
 
-    // if next chunk is free group together 
+    // if next chunk is free, group together 
     printf("... checking if coalescing is needed\n");
     if (chunk->fwd && chunk->fwd->is_free) {
         printf("... coalescing with next chunk\n");
@@ -177,5 +178,78 @@ void wfree(void *ptr) {
             chunk->fwd->bwd = chunk->bwd;
         }
     }
+    
 }
 
+void* wrealloc(void* ptr, size_t size){
+    if(ptr == NULL){
+        return walloc(size); 
+
+    }else if (size == 0){
+        wfree(ptr); 
+        return walloc(0); // ptr
+    }
+    /* Resize in place*/
+    node_t *current = (node_t *)_arena_start;
+
+    /* 
+        If fwd chunk is free and size of current chunk + fwd chunk > size, 
+            split fwd into two, combine current and fwd_1, adjust headers, adjust free_list, and return ptr.      
+        else
+            find a chunk that is large enough to fit size. 
+                If no chunks are available, return NULL
+            else
+                Copy data/headers, adjust freelist, free old chunk, return ptr. 
+    */
+   while (current){
+
+        int free_forward_space = current->size;
+        if(current->fwd && current->fwd->is_free) {
+            free_forward_space += current->fwd->size + sizeof(node_t);
+        }
+
+        if (free_forward_space >= size) { // there is enough space
+            if(free_forward_space - size > sizeof(node_t)){ // if we need to split.
+                node_t *new_chunk = (node_t *)((char *)current + sizeof(node_t) + size);
+                new_chunk->size = current->fwd->size + current->size - size - sizeof(node_t);
+                new_chunk->is_free = 1;
+                new_chunk->fwd = current->fwd->fwd;
+                new_chunk->bwd = current;
+                // set the back for new chunk 
+                // if (current->fwd->fwd) {
+                //     current->fwd->fwd->bwd = new_chunk;
+                // }
+                // update chunk we just allocated 
+                // current->fwd = new_chunk;
+                
+            }
+            else { 
+                if(current->fwd && current->fwd->fwd) {
+                    
+                    current->fwd = current->fwd->fwd;
+                    current->fwd->fwd->bwd = current;
+
+                }
+                else {
+                    current->fwd = NULL;
+                }
+                
+            }
+            if (free_forward_space - size <= sizeof(node_t)){ // we need to absorb
+                current->size = free_forward_space; 
+            }
+            else {
+                current->size = size;
+            }
+            // wfree(tmp);
+            return ptr;
+        }
+    if(current->fwd) {
+        printf("Size of curr+fwd+header %zu\n", current->size + current->fwd->size + sizeof(node_t));
+    }
+    printf("Not enough space in current+fwd\n");
+    current = current->fwd;
+   }
+
+    return NULL;
+}

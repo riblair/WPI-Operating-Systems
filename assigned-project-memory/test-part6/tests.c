@@ -108,6 +108,7 @@ void test_realloc_next_chunk_case1(){
   PRINTF_GREEN("Assert %d passed!\n", test++);
   assert(header->is_free == 0);
   PRINTF_GREEN("Assert %d passed!\n", test++);
+  // PRINTF_GREEN("header->size %zu, expected: %d\n", header->size, size2);
   assert(header->size == size2);
   PRINTF_GREEN("Assert %d passed!\n", test++);
   assert(header->bwd == NULL);
@@ -115,8 +116,6 @@ void test_realloc_next_chunk_case1(){
   assert(header->fwd == NULL);
 
   destroy();
-    
-
 }
 
 void test_realloc_next_chunk_case2(){
@@ -142,7 +141,6 @@ void test_realloc_next_chunk_case2(){
   // but the remaing size is not sufficient to split a free chunk 
   size2 = page_size - 2*sizeof(node_t);
   buff2 = wrealloc(buff, size2);
-
   assert(buff2 != NULL);
   PRINTF_GREEN("Assert %d passed!\n", test++);
   assert(buff2 == buff);
@@ -153,6 +151,7 @@ void test_realloc_next_chunk_case2(){
   PRINTF_GREEN("Assert %d passed!\n", test++);
   assert(header->is_free == 0);
   PRINTF_GREEN("Assert %d passed!\n", test++);
+  // PRINTF_GREEN("header->size %zu, expected: %d\n", header->size, size2);
   assert(header->size != size2);
   assert(header->size == (size + next->size + sizeof(node_t)));
   PRINTF_GREEN("Assert %d passed!\n", test++);
@@ -211,6 +210,7 @@ void test_realloc_next_chunk_case3(){
   PRINTF_GREEN("Assert %d passed!\n", test++);
   assert(header->bwd == NULL);
   PRINTF_GREEN("Assert %d passed!\n", test++);
+  PRINTF_GREEN("header-fwd>size %zu, expected: %d\n", header->fwd->size, size2-1);
   assert(header->fwd != NULL);
   assert(header->fwd->size == size2 - 1);
   PRINTF_GREEN("Assert %d passed!\n", test++);
