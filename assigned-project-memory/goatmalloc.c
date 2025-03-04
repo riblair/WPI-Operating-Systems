@@ -5,6 +5,7 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 
 #include "goatmalloc.h" 
 
@@ -189,8 +190,6 @@ void* wrealloc(void* ptr, size_t size){
         wfree(ptr); 
         return walloc(0); // ptr
     }
-    /* Resize in place*/
-    node_t *current = (node_t *)_arena_start;
 
     /* 
         If fwd chunk is free and size of current chunk + fwd chunk > size, 
@@ -201,55 +200,70 @@ void* wrealloc(void* ptr, size_t size){
             else
                 Copy data/headers, adjust freelist, free old chunk, return ptr. 
     */
-   while (current){
 
-        int free_forward_space = current->size;
-        if(current->fwd && current->fwd->is_free) {
-            free_forward_space += current->fwd->size + sizeof(node_t);
-        }
+    // get pointer to header
+    node_t *current = (node_t *)((char *)ptr - sizeof(node_t));
 
-        if (free_forward_space >= size) { // there is enough space
-            if(free_forward_space - size > sizeof(node_t)){ // if we need to split.
-                node_t *new_chunk = (node_t *)((char *)current + sizeof(node_t) + size);
-                new_chunk->size = current->fwd->size + current->size - size - sizeof(node_t);
-                new_chunk->is_free = 1;
-                new_chunk->fwd = current->fwd->fwd;
-                new_chunk->bwd = current;
-                // set the back for new chunk 
-                // if (current->fwd->fwd) {
-                //     current->fwd->fwd->bwd = new_chunk;
-                // }
-                // update chunk we just allocated 
-                // current->fwd = new_chunk;
+    // Check if next chunk is free and if combined they're big enough
+    node_t *next_chunk = current->fwd;
+    if (next_chunk && next_chunk->is_free) {
+        size_t free_forward_space = current->size + sizeof(node_t) + next_chunk->size;
+        
+        if (free_forward_space >= size) {
+            // If there's enough space to split 
+            if (free_forward_space - size >= sizeof(node_t) + 1) {
+                // Create a new free chunk 
+                node_t *new_free = (node_t *)((char *)current + sizeof(node_t) + size);
+                // outside of the combined space 
+                // the last section of the original 2 chunks that is not apart of the realloc 
+                new_free->size = free_forward_space - size - sizeof(node_t);
+                new_free->is_free = 1;
+                new_free->fwd = next_chunk->fwd;
+                new_free->bwd = current;
                 
-            }
-            else { 
-                if(current->fwd && current->fwd->fwd) {
-                    
-                    current->fwd = current->fwd->fwd;
-                    current->fwd->fwd->bwd = current;
-
-                }
-                else {
-                    current->fwd = NULL;
+                // Update the forward 
+                current->fwd = new_free;
+                
+                // Update the backward 
+                if (new_free->fwd) {
+                    new_free->fwd->bwd = new_free;
                 }
                 
-            }
-            if (free_forward_space - size <= sizeof(node_t)){ // we need to absorb
-                current->size = free_forward_space; 
-            }
-            else {
                 current->size = size;
+            } else {
+                // Take the entire combined space
+                current->size = free_forward_space;
+                current->fwd = next_chunk->fwd;
+                
+                // Update backward pointer 
+                if (next_chunk->fwd) {
+                    next_chunk->fwd->bwd = current;
+                }
             }
-            // wfree(tmp);
             return ptr;
         }
-    if(current->fwd) {
-        printf("Size of curr+fwd+header %zu\n", current->size + current->fwd->size + sizeof(node_t));
     }
-    printf("Not enough space in current+fwd\n");
-    current = current->fwd;
-   }
 
-    return NULL;
+    // COPY SECTION
+    // not sure if it works yet 
+    // If the fwd is not free we have to find a new space 
+    void *new_ptr = walloc(size);
+    if (!new_ptr) {
+        // out of arena 
+        return NULL; 
+    }
+    
+    // Copy data case 
+    size_t copy_size;
+    if (current->size < size) {
+        copy_size = current->size;
+    } else {
+        copy_size = size;
+    }
+    memcpy(new_ptr, ptr, copy_size);
+    
+    // Free the old chunk
+    wfree(ptr);
+    
+    return new_ptr;
 }
