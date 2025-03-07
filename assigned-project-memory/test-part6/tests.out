@@ -1,0 +1,326 @@
+Script started on 2023-02-20 09:33:14-05:00 [TERM="xterm" TTY="/dev/pts/0" COLUMNS="133" LINES="58"]
+# ./te	st_part6.sh -v
+Removing old goatmalloc binary.
+[32m>>Testing wrealloc for edge cases.
+[0mInitializing arena:
+...requested size 4096 bytes
+...pagesize is 4096 bytes
+...mapping arena with mmap()
+...arena starts at 0x402c000
+...arena ends at 0x402d000
+...initializing header for initial free chunk
+...header size is 32 bytes
+Resizing alloacted memory:
+...supplied pointer (nil):
+...looking for free chunk of >= 0 bytes
+Allocating memory:
+...looking for free chunk of >= 0 bytes
+...found free chunk of 4064 bytes with header at 0x402c000
+...free chunk->fwd currently points to (nil)
+...free chunk->bwd currently points to (nil)
+...checking if splitting is required
+...splitting free chunk
+...updating chunk header at 0x402c000
+...being careful with my pointer arthimetic and void pointer casting
+...allocation starts at 0x402c020
+[32mAssert 1 passed!
+[0mHeader->size: 0
+Header->fwd: 0x402c020
+Header->bwd: (nil)
+Header->is_free: 0
+Header->size: 4032
+Header->fwd: (nil)
+Header->bwd: 0x402c000
+Header->is_free: 1
+[32mAssert 2 passed!
+[0m[32mAssert 3 passed!
+[0m[32mAssert 4 passed!
+[0m[32mAssert 5 passed!
+[0mResizing alloacted memory:
+...supplied pointer 0x402c020:
+...looking for free chunk of >= 0 bytes
+Freeing allocated memory:
+...supplied pointer 0x402c020:
+...being careful with my pointer arthimetic and void pointer casting
+...accessing chunk header at 0x402c000
+...chunk of size 0
+...checking if coalescing is needed
+...col. case 3: current and next chunks free.
+Allocating memory:
+...looking for free chunk of >= 0 bytes
+...found free chunk of 4064 bytes with header at 0x402c000
+...free chunk->fwd currently points to (nil)
+...free chunk->bwd currently points to (nil)
+...checking if splitting is required
+...splitting free chunk
+...updating chunk header at 0x402c000
+...being careful with my pointer arthimetic and void pointer casting
+...allocation starts at 0x402c020
+Header->size: 0
+Header->fwd: 0x402c020
+Header->bwd: (nil)
+Header->is_free: 0
+Header->size: 4032
+Header->fwd: (nil)
+Header->bwd: 0x402c000
+Header->is_free: 1
+[32mAssert 6 passed!
+[0m[32mAssert 7 passed!
+[0m[32mAssert 8 passed!
+[0m[32mAssert 9 passed!
+[0mDestroying Arena:
+...unmapping arena with munmap()
+[32m>>Testing wrealloc to next chunk. Case 1
+[0mInitializing arena:
+...requested size 4096 bytes
+...pagesize is 4096 bytes
+...mapping arena with mmap()
+...arena starts at 0x402c000
+...arena ends at 0x402d000
+...initializing header for initial free chunk
+...header size is 32 bytes
+Allocating memory:
+...looking for free chunk of >= 1 bytes
+...found free chunk of 4064 bytes with header at 0x402c000
+...free chunk->fwd currently points to (nil)
+...free chunk->bwd currently points to (nil)
+...checking if splitting is required
+...splitting free chunk
+...updating chunk header at 0x402c000
+...being careful with my pointer arthimetic and void pointer casting
+...allocation starts at 0x402c020
+Resizing alloacted memory:
+...supplied pointer 0x402c020:
+...looking for free chunk of >= 4064 bytes
+...being careful with my pointer arthimetic and void pointer casting
+...accessing chunk header at 0x402c000
+...chunk of size 1
+...checking if splitting is required
+...splitting not required for the next chunk
+...updating chunk header at 0x402c000
+...growing current chunk.
+[32mAssert 1 passed!
+[0m[32mAssert 2 passed!
+[0m[32mAssert 3 passed!
+[0m[32mAssert 4 passed!
+[0m[32mAssert 5 passed!
+[0m[32mAssert 6 passed!
+[0mDestroying Arena:
+...unmapping arena with munmap()
+[32m>>Testing wrealloc to next chunk. Case 2
+[0mInitializing arena:
+...requested size 4096 bytes
+...pagesize is 4096 bytes
+...mapping arena with mmap()
+...arena starts at 0x402c000
+...arena ends at 0x402d000
+...initializing header for initial free chunk
+...header size is 32 bytes
+Allocating memory:
+...looking for free chunk of >= 16 bytes
+...found free chunk of 4064 bytes with header at 0x402c000
+...free chunk->fwd currently points to (nil)
+...free chunk->bwd currently points to (nil)
+...checking if splitting is required
+...splitting free chunk
+...updating chunk header at 0x402c000
+...being careful with my pointer arthimetic and void pointer casting
+...allocation starts at 0x402c020
+Header->size: 4016
+Header->fwd: (nil)
+Header->bwd: 0x402c000
+Header->is_free: 1
+Resizing alloacted memory:
+...supplied pointer 0x402c020:
+...looking for free chunk of >= 4032 bytes
+...being careful with my pointer arthimetic and void pointer casting
+...accessing chunk header at 0x402c000
+...chunk of size 16
+...checking if splitting is required
+...splitting not possible
+...updating chunk header at 0x402c000
+...growing current chunk.
+[32mAssert 1 passed!
+[0m[32mAssert 2 passed!
+[0m[32mAssert 3 passed!
+[0m[32mAssert 4 passed!
+[0m[32mAssert 5 passed!
+[0m[32mAssert 6 passed!
+[0m[32mAssert 7 passed!
+[0mDestroying Arena:
+...unmapping arena with munmap()
+[32m>>Testing wrealloc to next chunk. Case 3
+[0mInitializing arena:
+...requested size 4096 bytes
+...pagesize is 4096 bytes
+...mapping arena with mmap()
+...arena starts at 0x402c000
+...arena ends at 0x402d000
+...initializing header for initial free chunk
+...header size is 32 bytes
+Allocating memory:
+...looking for free chunk of >= 64 bytes
+...found free chunk of 4064 bytes with header at 0x402c000
+...free chunk->fwd currently points to (nil)
+...free chunk->bwd currently points to (nil)
+...checking if splitting is required
+...splitting free chunk
+...updating chunk header at 0x402c000
+...being careful with my pointer arthimetic and void pointer casting
+...allocation starts at 0x402c020
+Allocating memory:
+...looking for free chunk of >= 64 bytes
+...found free chunk of 3968 bytes with header at 0x402c060
+...free chunk->fwd currently points to (nil)
+...free chunk->bwd currently points to 0x402c000
+...checking if splitting is required
+...splitting free chunk
+...updating chunk header at 0x402c060
+...being careful with my pointer arthimetic and void pointer casting
+...allocation starts at 0x402c080
+Allocating memory:
+...looking for free chunk of >= 64 bytes
+...found free chunk of 3872 bytes with header at 0x402c0c0
+...free chunk->fwd currently points to (nil)
+...free chunk->bwd currently points to 0x402c060
+...checking if splitting is required
+...splitting free chunk
+...updating chunk header at 0x402c0c0
+...being careful with my pointer arthimetic and void pointer casting
+...allocation starts at 0x402c0e0
+Header->size: 64
+Header->fwd: 0x402c0c0
+Header->bwd: 0x402c000
+Header->is_free: 0
+Freeing allocated memory:
+...supplied pointer 0x402c080:
+...being careful with my pointer arthimetic and void pointer casting
+...accessing chunk header at 0x402c060
+...chunk of size 64
+...checking if coalescing is needed
+...coalescing not needed.
+Resizing alloacted memory:
+...supplied pointer 0x402c020:
+...looking for free chunk of >= 65 bytes
+...being careful with my pointer arthimetic and void pointer casting
+...accessing chunk header at 0x402c000
+...chunk of size 64
+...checking if splitting is required
+...splitting free chunk
+...updating chunk header at 0x402c000
+[32mAssert 1 passed!
+[0m[32mAssert 2 passed!
+[0m[32mAssert 3 passed!
+[0m[32mAssert 4 passed!
+[0m[32mAssert 5 passed!
+[0m[32mAssert 6 passed!
+[0m[32mAssert 7 passed!
+[0m[32mAssert 8 passed!
+[0mDestroying Arena:
+...unmapping arena with munmap()
+[32m>>Testing wrealloc with walloc.
+[0mInitializing arena:
+...requested size 4096 bytes
+...pagesize is 4096 bytes
+...mapping arena with mmap()
+...arena starts at 0x402c000
+...arena ends at 0x402d000
+...initializing header for initial free chunk
+...header size is 32 bytes
+Allocating memory:
+...looking for free chunk of >= 9 bytes
+...found free chunk of 4064 bytes with header at 0x402c000
+...free chunk->fwd currently points to (nil)
+...free chunk->bwd currently points to (nil)
+...checking if splitting is required
+...splitting free chunk
+...updating chunk header at 0x402c000
+...being careful with my pointer arthimetic and void pointer casting
+...allocation starts at 0x402c020
+Allocating memory:
+...looking for free chunk of >= 9 bytes
+...found free chunk of 4023 bytes with header at 0x402c029
+...free chunk->fwd currently points to (nil)
+...free chunk->bwd currently points to 0x402c000
+...checking if splitting is required
+...splitting free chunk
+...updating chunk header at 0x402c029
+...being careful with my pointer arthimetic and void pointer casting
+...allocation starts at 0x402c049
+Resizing alloacted memory:
+...supplied pointer 0x402c020:
+...looking for free chunk of >= 64 bytes
+...being careful with my pointer arthimetic and void pointer casting
+...accessing chunk header at 0x402c000
+...chunk of size 9
+...the current chunk does not have an eligible neighbor to grow the chunk
+Allocating memory:
+...looking for free chunk of >= 64 bytes
+...found free chunk of 3982 bytes with header at 0x402c052
+...free chunk->fwd currently points to (nil)
+...free chunk->bwd currently points to 0x402c029
+...checking if splitting is required
+...splitting free chunk
+...updating chunk header at 0x402c052
+...being careful with my pointer arthimetic and void pointer casting
+...allocation starts at 0x402c072
+Freeing allocated memory:
+...supplied pointer 0x402c020:
+...being careful with my pointer arthimetic and void pointer casting
+...accessing chunk header at 0x402c000
+...chunk of size 9
+...checking if coalescing is needed
+...coalescing not needed.
+[32mAssert 1 passed!
+[0m[32mAssert 2 passed!
+[0m[32mAssert 3 passed!
+[0m[32mAssert 4 passed!
+[0m[32mAssert 5 passed!
+[0m[32mAssert 6 passed!
+[0m[32mAssert 7 passed!
+[0m[32mAssert 8 passed!
+[0mDestroying Arena:
+...unmapping arena with munmap()
+[32m>>Testing realloc fail case.
+[0mInitializing arena:
+...requested size 4096 bytes
+...pagesize is 4096 bytes
+...mapping arena with mmap()
+...arena starts at 0x402c000
+...arena ends at 0x402d000
+...initializing header for initial free chunk
+...header size is 32 bytes
+Allocating memory:
+...looking for free chunk of >= 4064 bytes
+...found free chunk of 4064 bytes with header at 0x402c000
+...free chunk->fwd currently points to (nil)
+...free chunk->bwd currently points to (nil)
+...checking if splitting is required
+...splitting not required
+...updating chunk header at 0x402c000
+...being careful with my pointer arthimetic and void pointer casting
+...allocation starts at 0x402c020
+Resizing alloacted memory:
+...supplied pointer 0x402c020:
+...looking for free chunk of >= 4065 bytes
+...being careful with my pointer arthimetic and void pointer casting
+...accessing chunk header at 0x402c000
+...chunk of size 4064
+...the current chunk does not have an eligible neighbor to grow the chunk
+Allocating memory:
+...looking for free chunk of >= 4065 bytes
+...no such free chunk exists
+...setting error code
+...walloc fails
+...the error code is -1
+[32mAssert 1 passed!
+[0m[32mAssert 2 passed!
+[0m[32mAssert 3 passed!
+[0m[32mAssert 4 passed!
+[0m[32mAssert 5 passed!
+[0m[32mAssert 6 passed!
+[0mDestroying Arena:
+...unmapping arena with munmap()
+# exit
+
+Script done on 2023-02-20 09:33:34-05:00 [COMMAND_EXIT_CODE="0"]
