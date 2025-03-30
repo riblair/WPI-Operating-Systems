@@ -9,20 +9,23 @@ Finally, if you are unsure how to start the project, we recommend you visit offi
 Team members
 -----------------
 
-1. Alice (alice@wpi.edu)
-2. Bob (bob@wpi.edu)
+1. Jonathan (jrtinti@wpi.edu)
+2. Riley (rpblair@wpi.edu)
 
 Design Questions
 ------------------
 
 1. When implementing the `debug()` function, you will need to load the file system via the emulated disk and retrieve the information for superblock and inodes.
 1.1 How will you read the superblock?
-1.2 How will you traverse all the inodes?
+1.2 How will you traverse all the inodes? 
 1.3 How will you determine all the information related to an inode?
 1.4 How will you determine all the blocks related to an inode?
 
 Brief response please!
-
+1.1 We will create an instance of the superblock struct and then look at the fields in the struct such as MagicNumber and InodeBlocks.
+1.2 Traverse through the InodeBlocks referenced by the superblock by using a for loop.
+1.3 We will create an instance of each Inode struct and then query the relevant fields.
+1.4 We will create an instance of each data block and then query the relevant fields.
 ---
 
 2. When implementing the `format()` function, you will need to write the superblock and clear the remaining blocks in the file system.
