@@ -6,3 +6,5 @@ wshell
 __MACOSX/
 **.zip
 assigned-project-scheduling/scheduler
+assigned-project-files/solution/disk.o
+assigned-project-files/solution/goatfs.o

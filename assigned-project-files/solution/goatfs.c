@@ -17,83 +17,79 @@
 #include "disk.h"
 #include "goatfs.h"
 
+void display_super_block(struct _SuperBlock* sb) {
+    printf("SuperBlock:\n");
+    if (sb->MagicNumber == MAGIC_NUMBER) {
+        printf("    magic number is valid\n");
+    } else {
+        printf("    magic number is invalid\n");
+        return;
+    }
+    
+    printf("    %u blocks\n", sb->Blocks);
+    printf("    %u inode blocks\n", sb->InodeBlocks);
+    printf("    %u inodes\n", sb->Inodes);
+}
+
+void display_inode(struct _Inode* inode, int position) {
+    printf("Inode %d:\n", position);
+    printf("    size: %u bytes\n", inode->Size);
+    // need to print each block
+    printf("    direct blocks:");
+    int block_count = 0;
+    while(block_count < 5) { // printing direct blocks
+        unsigned int block_id = inode->Direct[block_count];
+        if (block_id) {
+            printf(" %u", block_id);
+            block_count++;
+        }
+        else {
+            break;
+        }
+    } 
+    printf("\n");
+    if (block_count == 5) { // print indirect blocks
+        printf("    indirect block: %u\n", inode->Indirect);
+        printf("    indirect data blocks:");
+        char indirect_buffer[BLOCK_SIZE];
+        wread(inode->Indirect, indirect_buffer);
+        int block_iter = 0;
+        unsigned int* data = (unsigned int*)malloc(sizeof(unsigned int));
+        memcpy(data, indirect_buffer, 4);
+        while(*data){
+            printf(" %u", *data);
+            memcpy(data, indirect_buffer+(++block_iter)*4, 4);
+        }
+        printf("\n");
+    }
+
+
+}
 
 void debug(){
     // Buffer to hold block data
-    int num_reads = 0; 
     char buffer[BLOCK_SIZE];
     
     // Read superblock
     wread(0, buffer);
-    num_reads++; 
     
-    char super_buffer[sizeof(struct _SuperBlock)];
-    strncpy(super_buffer, buffer, 16);
-    // Cast the buffer to a superblock structure
-    // must only cast first 16 bytes into a struct
-    struct _SuperBlock *sb = (struct _SuperBlock *)super_buffer;
+    struct _SuperBlock *sb = (struct _SuperBlock*)malloc(sizeof(struct _SuperBlock));
+    memcpy(sb, buffer, sizeof(struct _SuperBlock));
     
     // Verify magic number and display superblock info
-    printf("SuperBlock:\n");
-    if (sb->MagicNumber == MAGIC_NUMBER) {
-        printf("magic number is valid\n");
-    } else {
-        printf("magic number is invalid\n");
-        return;
-    }
-    
-    printf("\t%u blocks\n", sb->Blocks);
-    printf("\t%u inode blocks\n", sb->InodeBlocks);
-    printf("\t%u inodes\n", sb->Inodes);
+    display_super_block(sb);
 
+    struct _Inode* inode = (struct _Inode*)malloc(sizeof(struct _Inode));
     for(int i = 0; i < sb->InodeBlocks; i++) {
-
         char inode_block[BLOCK_SIZE];
-        char inode_buffer[sizeof(struct _Inode)];
-
-        wread(i+1, inode_buffer);
-        num_reads++; 
-        strncpy(inode_buffer, inode_block, 32);
-        
-        struct _Inode *inode = (struct _Inode*)inode_buffer;
-
-        if(!inode->Valid) {
-            continue;
+        wread(i+1, inode_block);
+        for(int j = 0; j < 128; j++) {
+            memcpy(inode, inode_block+j*sizeof(struct _Inode), sizeof(struct _Inode));
+            if(!inode->Valid) continue;
+            display_inode(inode, j);
         }
-        printf("Inode %d:\n", i);
-        printf("\tsize: %u\n", inode->Size);
-        // need to print each block
-        printf("\tdirect blocks:");
-        int block_count = 0;
-        
-        while(block_count < 5) { // printing direct blocks
-            unsigned int block_id = inode->Direct[block_count];
-            if (block_id) {
-                printf(" %u", block_id);
-                block_count++;
-            }
-            else {
-                break;
-            }
-        } 
-        printf("\n");
-        if (block_count == 5) { // print indirect blocks
-            printf("\tindirect block: %u\n", inode->Indirect);
-        }
-
-
-        printf("\t%u inodes\n", sb->Inodes);
-        printf("\t%u inodes\n", sb->Inodes);
-
-        // 
-        // int num_per_block = 128; 
-        
-        // for (int j = 0; j < num_per_block; j++){
-
-        // }
     }
 }
-
 
 bool format(){
 

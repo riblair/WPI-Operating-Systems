@@ -29,7 +29,8 @@ extern bool wremove(size_t inumber);
 extern ssize_t stat(size_t inumber);
 ssize_t wfsread(size_t inumber, char *data, size_t length, size_t offset);
 ssize_t wfswrite(size_t inumber, char *data, size_t length, size_t offset);
-//
+
+// void display_super_block(struct _SuperBlock);
 
 struct _SuperBlock {		// Superblock structure
     unsigned int MagicNumber;	// File system magic number
