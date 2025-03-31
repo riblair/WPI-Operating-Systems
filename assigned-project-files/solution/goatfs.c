@@ -17,18 +17,19 @@
 #include "disk.h"
 #include "goatfs.h"
 
-void display_super_block(struct _SuperBlock* sb) {
+int display_super_block(struct _SuperBlock* sb) {
     printf("SuperBlock:\n");
     if (sb->MagicNumber == MAGIC_NUMBER) {
         printf("    magic number is valid\n");
     } else {
         printf("    magic number is invalid\n");
-        return;
+        return 1;
     }
     
     printf("    %u blocks\n", sb->Blocks);
     printf("    %u inode blocks\n", sb->InodeBlocks);
     printf("    %u inodes\n", sb->Inodes);
+    return 0;
 }
 
 void display_inode(struct _Inode* inode, int position) {
@@ -62,8 +63,6 @@ void display_inode(struct _Inode* inode, int position) {
         }
         printf("\n");
     }
-
-
 }
 
 void debug(){
@@ -77,8 +76,8 @@ void debug(){
     memcpy(sb, buffer, sizeof(struct _SuperBlock));
     
     // Verify magic number and display superblock info
-    display_super_block(sb);
-
+    if (display_super_block(sb)) return;
+    
     struct _Inode* inode = (struct _Inode*)malloc(sizeof(struct _Inode));
     for(int i = 0; i < sb->InodeBlocks; i++) {
         char inode_block[BLOCK_SIZE];
@@ -92,12 +91,47 @@ void debug(){
 }
 
 bool format(){
+    if(_disk->Mounts) return false;
 
+    int blocks  = _disk->Blocks;
+    int inode_blocks = (int)ceil(blocks * .1);
+    struct _SuperBlock *sb = (struct _SuperBlock*)malloc(sizeof(struct _SuperBlock));
+
+    sb->MagicNumber = MAGIC_NUMBER;
+    sb->Blocks = blocks;
+    sb->InodeBlocks = inode_blocks;
+    sb->Inodes = 128*inode_blocks; 
+    
+    char empty_buffer[BLOCK_SIZE] = {0}; 
+    memcpy(empty_buffer, sb, sizeof(struct _SuperBlock));
+    wwrite(0, empty_buffer);
+    char empty_buffer2[BLOCK_SIZE] = {0}; 
+    for(int i = 1; i < blocks; i++) {
+        wwrite(i, empty_buffer2);
+    }
     return true;
 }
 
 int mount(){
-    return -1;
+    if(_disk->Mounts) return ERR_BAD_MAGIC_NUMBER;
+    char buffer[BLOCK_SIZE];
+    // Read superblock
+    wread(0, buffer);
+    struct _SuperBlock *sb = (struct _SuperBlock*)malloc(sizeof(struct _SuperBlock));
+    memcpy(sb, buffer, sizeof(struct _SuperBlock));
+    int inode_blocks = (int)ceil(_disk->Blocks * .1);
+
+    if(sb->MagicNumber != MAGIC_NUMBER) return ERR_BAD_MAGIC_NUMBER; 
+    if(sb->Blocks != _disk->Blocks) return ERR_NOT_ENOUGH_BLOCKS;
+    if(sb->InodeBlocks != inode_blocks) return ERR_NOT_ENOUGH_INODES;
+    if(sb->Inodes != inode_blocks*128) return ERR_CREATE_INODE; 
+
+    for(int i = 0; i < inode_blocks; i++) {
+        wread(i+1, buffer);
+        // do something...
+    }
+    _disk->Mounts++;
+    return SUCCESS_GOOD_MOUNT;
 }
 
 ssize_t create(){
