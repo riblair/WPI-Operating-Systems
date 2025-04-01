@@ -36,6 +36,9 @@ Brief response please!
 
 Brief response please!
 
+2.1 If the file system is already mounted, we will return false because we know it does not need to be formatted. 
+2.2 The information that must be implemented into the superblock is the magic number, the number of blocks, number of inode blocks, and number of inodes. 
+2.3 Create an array 128 long set all to 0 and then memcpy that into the buffer for all of the inodes. 
 ---
 
 3. When implementing the `mount()` function, you will need to prepare a filesystem for use by reading the superblock and allocating the free block bitmap.
@@ -46,6 +49,9 @@ Brief response please!
 
 Brief response please!
 
+3.1 If the file is already mounted, we will return an error code so it is not mounted twice. 
+3.2 We need to check that the disk and the superblock have the same number of blocks, inode blocks, inodes, and that the superblock has the correct magic number. 
+3.3 We will create our own in memory bit map to store a 0 for a block that is free and a 1 for one that is taken. 
 ---
 
 4. To implement `create()`, you will need to locate a free inode and save a new inode into the inode table.
@@ -56,6 +62,9 @@ Brief response please!
 
 Brief response please!
 
+4.1 Loop through the bit map and see which inodes have a entry of 0. 
+4.2 We need to set the Valid field in the inode to 1, the size to 0, and the indirect to 0. 
+4.3 We will write the new inode to that inode block. 
 ---
 
 5. To implement `remove()`, you will need to locate the inode and then free its associated blocks.

@@ -112,6 +112,22 @@ bool format(){
     return true;
 }
 
+void create_bitmap(int inode_blocks) {
+    bitmap = (uint8_t*)malloc(inode_blocks * 16 * sizeof(uint8_t));
+    char inode_block[BLOCK_SIZE];
+    for(int i = 0; i < inode_blocks; i++) {
+        wread(i+1, inode_block);
+        //update bitmap
+        struct _Inode* inode = (struct _Inode*)malloc(sizeof(struct _Inode));
+        for(int j = 0; j < 128; j++) {
+            memcpy(inode, inode_block+j*sizeof(struct _Inode), sizeof(struct _Inode));
+            if(inode->Valid) {
+                bitmap[i*16+(int)(j/8)] |= (1 << (j % 8));
+            }
+        }
+    }
+}
+
 int mount(){
     if(_disk->Mounts) return ERR_BAD_MAGIC_NUMBER;
     char buffer[BLOCK_SIZE];
@@ -126,16 +142,52 @@ int mount(){
     if(sb->InodeBlocks != inode_blocks) return ERR_NOT_ENOUGH_INODES;
     if(sb->Inodes != inode_blocks*128) return ERR_CREATE_INODE; 
 
-    for(int i = 0; i < inode_blocks; i++) {
-        wread(i+1, buffer);
-        // do something...
-    }
+    create_bitmap(sb->InodeBlocks);
     _disk->Mounts++;
     return SUCCESS_GOOD_MOUNT;
 }
 
+int find_free_inode(int block_index) {
+    for(int i = 0; i < 16; i++) {
+        if(bitmap[block_index*16+i] == 0xff) continue;
+        for(int j = 0; j < 8; j++) {
+            int a = bitmap[block_index*16 + i] >> j & 0x01;
+            if(!a) return i*8+j;
+        }
+    }
+    return -1;
+}
+
+void write_Inode(int block_index, int inode_index) {
+    struct _Inode* inode = (struct _Inode*)malloc(sizeof(struct _Inode));
+    char inode_block[BLOCK_SIZE];
+    wread(block_index, inode_block);
+    memcpy(inode, inode_block+inode_index*sizeof(struct _Inode), sizeof(struct _Inode));
+    inode->Valid = 1;
+    // do we need to set inode->direct to all zeros?
+    inode->Indirect = 0;
+    inode->Size = 0;
+    memcpy(inode_block+inode_index*sizeof(struct _Inode),inode, sizeof(struct _Inode));
+    wwrite(block_index, inode_block);
+}
+
 ssize_t create(){
-    return 0;
+    char buffer[BLOCK_SIZE];
+    // Read superblock
+    wread(0, buffer);
+    struct _SuperBlock *sb = (struct _SuperBlock*)malloc(sizeof(struct _SuperBlock));
+    memcpy(sb, buffer, sizeof(struct _SuperBlock));
+
+    for(int i = 0; i < sb->InodeBlocks; i++) {
+        // check bitmap 
+        int free_index = find_free_inode(i);
+        if (free_index == -1) continue; 
+
+        write_Inode(i+1, free_index);
+        bitmap[i*16+(int)(free_index/8)] |= (1 << (free_index % 8));
+        return free_index;
+    }
+    return ERR_CREATE_INODE;
 }
 bool wremove(size_t inumber){
     return true;
