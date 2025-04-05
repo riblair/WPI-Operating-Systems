@@ -76,6 +76,10 @@ Brief response please!
 
 Brief response please!
 
+5.1 We find the index in the inode table from the inumber and we use the superblock and find the inode block to find the inode and check the valid field
+5.2 Loop through all of the direct blocks and set their value to 0. 
+5.3 Read the indirect blocks if they are there and loop through and set them to 0 if they are not already. 
+5.4 We use memcpy to update the table as well as updating the bitmap to show valid inodes. 
 ---
 
 6. To implement `stat()`, you will need to locate the inode and return its size.
@@ -85,6 +89,8 @@ Brief response please!
 
 Brief response please!
 
+6.1 We find the index in the inode table from the inumber and we use the superblock and find the inode block to find the inode and check the valid field
+6.2 The inode has a field called size; we query that. 
 ---
 
 7. To implement `read()`, you will need to locate the inode and copy data from appropriate blocks to the user-specified data buffer.

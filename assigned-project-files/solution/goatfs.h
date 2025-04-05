@@ -4,6 +4,16 @@
 # include "disk.h"
 # include <stdint.h> // uint32_t
 
+#define max(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a > _b ? _a : _b; })
+
+#define min(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a < _b ? _a : _b; })
+
 // internal error codes
 #define ERR_BAD_MAGIC_NUMBER (-1)
 #define ERR_NOT_ENOUGH_BLOCKS (-2)

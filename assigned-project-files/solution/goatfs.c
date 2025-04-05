@@ -189,6 +189,7 @@ ssize_t create(){
     }
     return ERR_CREATE_INODE;
 }
+
 bool wremove(size_t inumber){
     // if it has not been mounted yet, can't remove it 
     if (!_disk->Mounts) {
@@ -209,6 +210,7 @@ bool wremove(size_t inumber){
         return false;
     }
 
+    // TODO: exit early via checking inode table instead of reading chunk 
     char inode_block[BLOCK_SIZE];
     wread(block_index, inode_block);
 
@@ -263,10 +265,102 @@ bool wremove(size_t inumber){
     return true;
 }
 ssize_t stat(size_t inumber) {
-    return 0;
+
+    if(!_disk->Mounts) {
+        return -1;
+    }
+
+    int block_index = (inumber / 128) + 1; // give us the block number...
+    int inode_offset = inumber % 128;
+
+
+    // char buffer[BLOCK_SIZE];
+
+    // wread(0, buffer);
+
+    // struct _SuperBlock *sb = (struct _SuperBlock *)malloc((sizeof(struct _SuperBlock)));
+    // memcpy(sb, buffer, sizeof(struct _SuperBlock));
+
+    char inode_block[BLOCK_SIZE];
+    wread(block_index, inode_block);
+
+    // Get the inode
+    struct _Inode *inode = (struct _Inode *)malloc(sizeof(struct _Inode));
+    memcpy(inode, inode_block + (inode_offset * sizeof(struct _Inode)), sizeof(struct _Inode));
+
+    uint8_t bit_block = bitmap[(block_index-1)*16 + (int)(inode_offset / 8)];
+    bit_block &= 0x1 << (inode_offset % 8); 
+
+    if(!bit_block) {
+        return -1;
+    }
+
+    return inode->Size;
 }
-ssize_t wfsread(size_t inumber, char* data, size_t length, size_t offset){
-    return 0;
+ssize_t wfsread(size_t inumber, char* data, size_t length, size_t offset) {
+
+    if(!_disk->Mounts) {
+        return -1;
+    }
+
+    int block_index = (inumber / 128) + 1; // give us the block number...
+    int inode_offset = inumber % 128;
+    
+    char inode_block[BLOCK_SIZE];
+    wread(block_index, inode_block);
+    struct _Inode *inode = (struct _Inode *)malloc(sizeof(struct _Inode));
+    memcpy(inode, inode_block + (inode_offset * sizeof(struct _Inode)), sizeof(struct _Inode));
+
+    uint8_t bit_block = bitmap[(block_index-1)*16 + (int)(inode_offset / 8)];
+    bit_block &= 0x1 << (inode_offset % 8); 
+
+    if(!bit_block) {
+        return -1;
+    }
+
+    // get the data_block from direct
+
+    // length -> ceil(length / 4096) = blocks needed to read
+    // int num_blocks_needed = ceil(length / 4096); 
+    
+    size_t bytes_left = min(length, inode->Size) - offset;
+    size_t cur_offset = offset;
+    char data_buffer[BLOCK_SIZE];
+    char indirect_buffer[BLOCK_SIZE];
+    int direct_iter = 0;
+    int indirect_iter = -1; 
+    int bytes_to_read;
+    size_t bytes_read = 0;
+    unsigned int* indirect_pointer = (unsigned int*)malloc(sizeof(unsigned int));
+
+    while (bytes_left) {
+        if(direct_iter > 4) {
+            // if we have not read an indirect block, read indirect block...
+            if(indirect_iter == -1) {
+                wread(inode->Indirect, indirect_buffer); 
+            }
+
+            // iterate through indirect block pointers until we reach the end...
+            memcpy(indirect_pointer, indirect_buffer+(++indirect_iter)*4, 4);
+            wread(*indirect_pointer, data_buffer);
+        }
+        else {
+            wread(inode->Direct[direct_iter++], data_buffer);
+        }
+        // we read length if length < 4096 - offset, otherwise
+        if((bytes_left+cur_offset) > 4096) {
+            bytes_to_read = 4096 - cur_offset;
+        }
+        else {
+            bytes_to_read = bytes_left;
+        }
+        memcpy(data+bytes_read, data_buffer+cur_offset, bytes_to_read);
+        bytes_read+= bytes_to_read;
+        bytes_left -= bytes_to_read;
+        cur_offset = 0;
+    }
+
+    return bytes_read;
 }
 ssize_t wfswrite(size_t inumber, char* data, size_t length, size_t offset){
     return 0;
