@@ -323,25 +323,33 @@ ssize_t wfsread(size_t inumber, char* data, size_t length, size_t offset) {
     // length -> ceil(length / 4096) = blocks needed to read
     // int num_blocks_needed = ceil(length / 4096); 
     
-    size_t bytes_left = min(length, inode->Size) - offset;
-    size_t cur_offset = offset;
+    size_t bytes_left = min(length, inode->Size - offset);
     char data_buffer[BLOCK_SIZE];
-    char indirect_buffer[BLOCK_SIZE];
+    char indirect_buffer[BLOCK_SIZE] = {0};
     int direct_iter = 0;
-    int indirect_iter = -1; 
+    int indirect_iter = 0; 
     int bytes_to_read;
     size_t bytes_read = 0;
     unsigned int* indirect_pointer = (unsigned int*)malloc(sizeof(unsigned int));
+    // Must first SEEK to correct block if offset > blocksize
+    int blocks_to_skip = offset / BLOCK_SIZE;
+    size_t cur_offset = offset % BLOCK_SIZE;
+    if(blocks_to_skip > 0 && blocks_to_skip <= 5) {
+        direct_iter = blocks_to_skip;
+    }
+    else if (blocks_to_skip > 5) {
+        direct_iter = 5;
+        blocks_to_skip-=5;
+        indirect_iter = blocks_to_skip;
+    }
 
     while (bytes_left) {
         if(direct_iter > 4) {
             // if we have not read an indirect block, read indirect block...
-            if(indirect_iter == -1) {
-                wread(inode->Indirect, indirect_buffer); 
-            }
+            if(indirect_buffer[0] == 0) wread(inode->Indirect, indirect_buffer); 
 
             // iterate through indirect block pointers until we reach the end...
-            memcpy(indirect_pointer, indirect_buffer+(++indirect_iter)*4, 4);
+            memcpy(indirect_pointer, indirect_buffer+(indirect_iter++)*4, 4);
             wread(*indirect_pointer, data_buffer);
         }
         else {
