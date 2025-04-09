@@ -371,5 +371,91 @@ ssize_t wfsread(size_t inumber, char* data, size_t length, size_t offset) {
     return bytes_read;
 }
 ssize_t wfswrite(size_t inumber, char* data, size_t length, size_t offset){
-    return 0;
+    if(!_disk->Mounts) {
+        return -1;
+    }
+
+    int block_index = (inumber / 128) + 1; // give us the block number...
+    int inode_offset = inumber % 128;
+    
+    char inode_block[BLOCK_SIZE];
+    wread(block_index, inode_block);
+    struct _Inode *inode = (struct _Inode *)malloc(sizeof(struct _Inode));
+    memcpy(inode, inode_block + (inode_offset * sizeof(struct _Inode)), sizeof(struct _Inode));
+
+    uint8_t bit_block = bitmap[(block_index-1)*16 + (int)(inode_offset / 8)];
+    bit_block &= 0x1 << (inode_offset % 8); 
+
+    if(!bit_block) {
+        return -1;
+    }
+
+    // get the data_block from direct
+
+    // length -> ceil(length / 4096) = blocks needed to read
+    // int num_blocks_needed = ceil(length / 4096); 
+    
+    size_t bytes_left = length;
+    char data_buffer[BLOCK_SIZE] = {0};
+    char indirect_buffer[BLOCK_SIZE] = {0};
+    int direct_iter = 0;
+    int indirect_iter = 0; 
+    int bytes_to_write;
+    size_t bytes_written = 0;
+    unsigned int new_block = 0;
+    unsigned int* indirect_pointer = (unsigned int*)malloc(sizeof(unsigned int));
+    // Must first SEEK to correct block if offset > blocksize
+    int blocks_to_skip = offset / BLOCK_SIZE;
+    size_t cur_offset = offset % BLOCK_SIZE;
+    if(blocks_to_skip > 0 && blocks_to_skip <= 5) {
+        direct_iter = blocks_to_skip;
+    }
+    else if (blocks_to_skip > 5) {
+        direct_iter = 5;
+        blocks_to_skip-=5;
+        indirect_iter = blocks_to_skip;
+    }
+
+    while (bytes_left) {
+        if ((bytes_left + cur_offset) > BLOCK_SIZE) {
+            bytes_to_write = BLOCK_SIZE - cur_offset;
+        } else {
+            bytes_to_write = bytes_left;
+        }
+        if(direct_iter > 4) {
+            // if we have not read an indirect block, read indirect block...
+            if (indirect_buffer[0] == 0&& inode->Indirect != 0) {
+                 wread(inode->Indirect, indirect_buffer); 
+            } 
+
+            // iterate through indirect block pointers until we reach the end...
+            memcpy(indirect_pointer, indirect_buffer+(indirect_iter)*4, 4);
+            memcpy(data_buffer + cur_offset, data + bytes_written, bytes_to_write);
+            wwrite(*indirect_pointer, data_buffer);
+            indirect_iter++;
+        }
+        else {
+            wread(inode->Direct[direct_iter], data_buffer);
+            memcpy(data_buffer + cur_offset, data + bytes_written, bytes_to_write);
+            wwrite(inode->Direct[direct_iter], data_buffer);
+            direct_iter++;
+        }
+        // we read length if length < 4096 - offset, otherwise
+        if((bytes_left+cur_offset) > 4096) {
+            bytes_to_write = 4096 - cur_offset;
+        }
+        else {
+            bytes_to_write = bytes_left;
+        }
+        bytes_written+= bytes_to_write;
+        bytes_left -= bytes_to_write;
+        cur_offset = 0;
+    }
+    memcpy(inode_block + (inode_offset * sizeof(struct _Inode)), inode, sizeof(struct _Inode));
+    wwrite(block_index, inode_block);
+    
+    free(inode);
+    free(indirect_pointer);
+
+    return bytes_written;
 }
