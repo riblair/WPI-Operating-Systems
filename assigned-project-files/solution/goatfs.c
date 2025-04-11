@@ -111,9 +111,45 @@ bool format(){
     }
     return true;
 }
+void update_dbitmap(int d_pointer) {
+    int total_blocks = _disk->Blocks;
+    int inode_blocks = ceil(total_blocks * 0.1);
+    int index = d_pointer - inode_blocks - 1;
+    
+    int outer_index = index / 8;
+    int inner_index = index % 8; 
+    d_bitmap[outer_index] |= 0x1 << inner_index;
+}
 
-void create_bitmap(int inode_blocks) {
-    bitmap = (uint8_t*)malloc(inode_blocks * 16 * sizeof(uint8_t));
+void populate_d_bitmap(struct _Inode* inode, int inode_blocks) {
+    //iterate though direct & indirect blocks
+    // for each block pointer, mark it as taken in the d_bitmap 
+    int block_count = 0;
+    while(block_count < 5) { // populate direct blocks
+        unsigned int block_id = inode->Direct[block_count];
+        if(!block_id) return;
+        update_dbitmap(block_id); 
+        block_count++;
+    } 
+    if (block_count == 5) {  // populate indirect blocks 
+        if(!inode->Indirect) return;
+        int block_iter = 0;
+        char indirect_buffer[BLOCK_SIZE];
+        wread(inode->Indirect, indirect_buffer);
+        unsigned int* data = (unsigned int*)malloc(sizeof(unsigned int));
+        memcpy(data, indirect_buffer, 4);
+        while(*data){
+            update_dbitmap(*data);
+            memcpy(data, indirect_buffer+(++block_iter)*4, 4);
+        }
+    }
+}
+
+void create_bitmaps(int total_blocks, int inode_blocks) {
+    i_bitmap = (uint8_t*)malloc(inode_blocks * 16 * sizeof(uint8_t));
+    int data_blocks = total_blocks-inode_blocks-1;
+    int num = ceil(data_blocks/8.0);
+    d_bitmap = (uint8_t*)malloc(num*sizeof(uint8_t));
     char inode_block[BLOCK_SIZE];
     for(int i = 0; i < inode_blocks; i++) {
         wread(i+1, inode_block);
@@ -122,7 +158,8 @@ void create_bitmap(int inode_blocks) {
         for(int j = 0; j < 128; j++) {
             memcpy(inode, inode_block+j*sizeof(struct _Inode), sizeof(struct _Inode));
             if(inode->Valid) {
-                bitmap[i*16+(int)(j/8)] |= (1 << (j % 8));
+                i_bitmap[i*16+(int)(j/8)] |= (1 << (j % 8));
+                populate_d_bitmap(inode, inode_blocks);
             }
         }
     }
@@ -142,17 +179,30 @@ int mount(){
     if(sb->InodeBlocks != inode_blocks) return ERR_NOT_ENOUGH_INODES;
     if(sb->Inodes != inode_blocks*128) return ERR_CREATE_INODE; 
 
-    create_bitmap(sb->InodeBlocks);
+    create_bitmaps(sb->Blocks, sb->InodeBlocks);
     _disk->Mounts++;
     return SUCCESS_GOOD_MOUNT;
 }
 
 int find_free_inode(int block_index) {
     for(int i = 0; i < 16; i++) {
-        if(bitmap[block_index*16+i] == 0xff) continue;
+        if(i_bitmap[block_index*16+i] == 0xff) continue;
         for(int j = 0; j < 8; j++) {
-            int a = bitmap[block_index*16 + i] >> j & 0x01;
+            int a = i_bitmap[block_index*16 + i] >> j & 0x01;
             if(!a) return i*8+j;
+        }
+    }
+    return -1;
+}
+
+int find_free_dblock() {
+    int total_blocks = _disk->Blocks;
+    int inode_blocks = ceil(total_blocks * 0.1);
+
+    for(int i = 0; i < total_blocks-inode_blocks-1; i++) {
+        uint8_t bit = d_bitmap[(i/8)] & 0x1 << (i%8);
+        if (!bit) {
+            return i+inode_blocks+1;
         }
     }
     return -1;
@@ -184,7 +234,7 @@ ssize_t create(){
         if (free_index == -1) continue; 
 
         write_Inode(i+1, free_index);
-        bitmap[i*16+(int)(free_index/8)] |= (1 << (free_index % 8));
+        i_bitmap[i*16+(int)(free_index/8)] |= (1 << (free_index % 8));
         return free_index;
     }
     return ERR_CREATE_INODE;
@@ -258,12 +308,13 @@ bool wremove(size_t inumber){
     memcpy(inode_block + (inode_offset * sizeof(struct _Inode)), inode, sizeof(struct _Inode));
     wwrite(block_index, inode_block);
 
-    bitmap[((block_index - 1) * (BLOCK_SIZE / sizeof(struct _Inode)) + inode_offset) / 8] &= ~(1 << (inode_offset % 8));
+    i_bitmap[((block_index - 1) * (BLOCK_SIZE / sizeof(struct _Inode)) + inode_offset) / 8] &= ~(1 << (inode_offset % 8));
     free(inode);
     free(sb);
 
     return true;
 }
+
 ssize_t stat(size_t inumber) {
 
     if(!_disk->Mounts) {
@@ -288,7 +339,7 @@ ssize_t stat(size_t inumber) {
     struct _Inode *inode = (struct _Inode *)malloc(sizeof(struct _Inode));
     memcpy(inode, inode_block + (inode_offset * sizeof(struct _Inode)), sizeof(struct _Inode));
 
-    uint8_t bit_block = bitmap[(block_index-1)*16 + (int)(inode_offset / 8)];
+    uint8_t bit_block = i_bitmap[(block_index-1)*16 + (int)(inode_offset / 8)];
     bit_block &= 0x1 << (inode_offset % 8); 
 
     if(!bit_block) {
@@ -297,6 +348,7 @@ ssize_t stat(size_t inumber) {
 
     return inode->Size;
 }
+
 ssize_t wfsread(size_t inumber, char* data, size_t length, size_t offset) {
 
     if(!_disk->Mounts) {
@@ -311,7 +363,7 @@ ssize_t wfsread(size_t inumber, char* data, size_t length, size_t offset) {
     struct _Inode *inode = (struct _Inode *)malloc(sizeof(struct _Inode));
     memcpy(inode, inode_block + (inode_offset * sizeof(struct _Inode)), sizeof(struct _Inode));
 
-    uint8_t bit_block = bitmap[(block_index-1)*16 + (int)(inode_offset / 8)];
+    uint8_t bit_block = i_bitmap[(block_index-1)*16 + (int)(inode_offset / 8)];
     bit_block &= 0x1 << (inode_offset % 8); 
 
     if(!bit_block) {
@@ -370,6 +422,7 @@ ssize_t wfsread(size_t inumber, char* data, size_t length, size_t offset) {
 
     return bytes_read;
 }
+
 ssize_t wfswrite(size_t inumber, char* data, size_t length, size_t offset){
     if(!_disk->Mounts) {
         return -1;
@@ -383,17 +436,12 @@ ssize_t wfswrite(size_t inumber, char* data, size_t length, size_t offset){
     struct _Inode *inode = (struct _Inode *)malloc(sizeof(struct _Inode));
     memcpy(inode, inode_block + (inode_offset * sizeof(struct _Inode)), sizeof(struct _Inode));
 
-    uint8_t bit_block = bitmap[(block_index-1)*16 + (int)(inode_offset / 8)];
+    uint8_t bit_block = i_bitmap[(block_index-1)*16 + (int)(inode_offset / 8)];
     bit_block &= 0x1 << (inode_offset % 8); 
 
     if(!bit_block) {
         return -1;
     }
-
-    // get the data_block from direct
-
-    // length -> ceil(length / 4096) = blocks needed to read
-    // int num_blocks_needed = ceil(length / 4096); 
     
     size_t bytes_left = length;
     char data_buffer[BLOCK_SIZE] = {0};
@@ -402,7 +450,7 @@ ssize_t wfswrite(size_t inumber, char* data, size_t length, size_t offset){
     int indirect_iter = 0; 
     int bytes_to_write;
     size_t bytes_written = 0;
-    unsigned int new_block = 0;
+    // unsigned int new_block = 0;
     unsigned int* indirect_pointer = (unsigned int*)malloc(sizeof(unsigned int));
     // Must first SEEK to correct block if offset > blocksize
     int blocks_to_skip = offset / BLOCK_SIZE;
@@ -435,10 +483,21 @@ ssize_t wfswrite(size_t inumber, char* data, size_t length, size_t offset){
             indirect_iter++;
         }
         else {
+            int direct_pointer = inode->Direct[direct_iter];
+            if(!direct_pointer) {
+                // find new inode block for system
+                int d_block_pointer = find_free_dblock();
+                if (d_block_pointer == -1) {
+                    return -1;
+                }
+                update_dbitmap(d_block_pointer);
+                //update inode
+                inode->Direct[direct_iter] = d_block_pointer;
+            }
             wread(inode->Direct[direct_iter], data_buffer);
             memcpy(data_buffer + cur_offset, data + bytes_written, bytes_to_write);
             wwrite(inode->Direct[direct_iter], data_buffer);
-            direct_iter++;
+            direct_iter++;        
         }
         // we read length if length < 4096 - offset, otherwise
         if((bytes_left+cur_offset) > 4096) {
@@ -451,6 +510,7 @@ ssize_t wfswrite(size_t inumber, char* data, size_t length, size_t offset){
         bytes_left -= bytes_to_write;
         cur_offset = 0;
     }
+    inode->Size += bytes_written;
     memcpy(inode_block + (inode_offset * sizeof(struct _Inode)), inode, sizeof(struct _Inode));
     wwrite(block_index, inode_block);
     

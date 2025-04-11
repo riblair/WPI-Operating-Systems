@@ -71,6 +71,7 @@ union _Block {
 typedef union _Block Block;
 
 DISK* _disk;    // disk handler
-uint8_t* bitmap;
+uint8_t* i_bitmap;
+uint8_t* d_bitmap;
 
 #endif

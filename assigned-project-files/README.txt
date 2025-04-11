@@ -115,7 +115,13 @@ Brief response please!
 8.7  How will you update the inode?
 
 Brief response please!
-
+8.1 We will check our bitmap for that value and see if there is a valid entry there. 
+8.2 We are going to find the inode block by dividing the inumber by 128 and finding the index in the block by using modulus 128. 
+8.3 For the offset, we first need to figure out the number of blocks we have to skip, if any, by dividing offset by BLOCK_SIZE and then we create a current offset by doing offset % BLOCK_SIZE. We will then update the current offset by how much we write._disk
+8.4 We created a bitmap for data blocks that stores when a data block is in existence and we have iterate through the bitmap to see if it is empty. 
+8.5 We will search through the d_bitmap to find a free block to allocate. We then update the d_bitmap to mark it as taken, and then update the inode to reflect this change.
+8.6 memcpy in a similar fashion to wfsread 
+8.7 Set the inode size field equal to the bytes written and then memcpy the buffer to the inode.
 ---
 
 
