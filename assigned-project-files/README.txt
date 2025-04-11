@@ -101,7 +101,10 @@ Brief response please!
 7.4  How will you copy from a block to the data buffer?
 
 Brief response please!
-
+7.1 We will check our bitmap for that value and see if there is a valid entry there. 
+7.2 We are going to find the inode block by dividing the inumber by 128 and finding the index in the block by using modulus 128. 
+7.3 For the offset, we first need to figure out the number of blocks we have to skip, if any, by dividing offset by BLOCK_SIZE and then we create a current offset by doing offset % BLOCK_SIZE. We will then update the current offset by how much we read. 
+7.4 We will read from the data buffer into our direct blocks and then memcpy into our buffer. We will do this until we run out of direct blocks and then switch to indirect. 
 ---
 
 8. To implement `write()`, you will need to locate the inode and copy data the user-specified data buffer to data blocks in the file system.
