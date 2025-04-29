@@ -15,7 +15,7 @@ begins AAB we will not add up to 5 A's, which I guess is not totally wrong but w
 
 */
 
-// struct for individual thread data 
+
 typedef struct {
     long start_offset; // where for the thread to start 
     long end_offset; 
@@ -28,18 +28,16 @@ typedef struct {
     int boundary_merged; // whetheer or not we have checked if letter go across borders 
 } ThreadData; 
 
-// struct for overall data 
+
 typedef struct {
     uint32_t* counts;   // array of number of occurences of each letter 
     char* chars;    // array of letters entered 
     int entries; 
-    int capacity; 
-    int size; 
+    int capacity;  
 } Result; 
 
 Result* thread_results; 
-pthread_mutex_t merge_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t file_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void init_result (Result* result, int initial_capacity) {
     // initialize in memory 
@@ -50,13 +48,6 @@ void init_result (Result* result, int initial_capacity) {
 }
 
 void add_entry(Result* result, uint32_t count, char c) {
-    if (result->entries >= result->capacity){
-        // if there is not enough storage we have to reallocate
-        result->capacity *= 2; 
-        result->counts = (uint32_t*)realloc(result->counts, result->capacity * sizeof(uint32_t)); 
-        result-> chars = (char*)realloc(result->chars, result->capacity * sizeof(char)); 
-    }
-    // otherwise 
     result->counts[result->entries] = count; 
     result->chars[result->entries] = c; 
     result->entries ++; 
@@ -65,11 +56,10 @@ void add_entry(Result* result, uint32_t count, char c) {
 void free_result(Result* result) {
     free(result->counts);
     free(result->chars);
-    result->size = 0;
     result->capacity = 0;
 }
 
-// Get file size to divy up between threads later 
+
 long get_file_size(const char* filename) {
     struct stat st;
     if (stat(filename, &st) == 0) {
@@ -78,7 +68,6 @@ long get_file_size(const char* filename) {
     return -1;
 }
 
-// Thread function to perform RLE on a chunk of a file
 void* thread_rle(void* arg) {
     ThreadData* data = (ThreadData*)arg;
     char* fname = data->filename;
@@ -86,18 +75,17 @@ void* thread_rle(void* arg) {
     long end = data->end_offset;
     
     // enter CR
-    pthread_mutex_lock(&file_mutex);
+    pthread_mutex_lock(&mutex);
     FILE* f1 = fopen(fname, "r");
     if (f1 == NULL) {
         printf("wpzip: cannot open file %s\n", fname);
-        pthread_mutex_unlock(&file_mutex);
+        pthread_mutex_unlock(&fmutex);
         return NULL;
     }
     
     // finds the start offset of the file 
     fseek(f1, start, SEEK_SET);
     
-    // Initialize result
     Result* result = &thread_results[data->thread_id];
     init_result(result, 1024);
     
@@ -105,7 +93,6 @@ void* thread_rle(void* arg) {
     char current;
     char c;
     
-    // Read the first character
     if (start < end) {
         c = fgetc(f1);
         current = c;
@@ -113,7 +100,7 @@ void* thread_rle(void* arg) {
         start++;
     }
     
-    // Process the rest of the chunk
+    // Process the rest 
     while (start < end) {
         c = fgetc(f1);
         start++;
@@ -124,29 +111,25 @@ void* thread_rle(void* arg) {
             current = c;
             count = 1;
         } else {
-            // otherwise increment 
             count++;
         }
     }
     
-    // Store the last character and count
     if (count > 0) {
         data->last_char = current;
         data->last_count = count;
-        // Only add the last entry if it's not the last chunk or it's the only chunk
         if (end != get_file_size(fname) || start == end) {
             add_entry(result, count, current);
         }
     }
     
-    // Store the first character and count
     if (result->size > 0) {
         data->first_char = result->chars[0];
         data->first_count = result->counts[0];
     }
     
     fclose(f1);
-    pthread_mutex_unlock(&file_mutex);
+    pthread_mutex_unlock(&mutex);
     
     return NULL;
 }
@@ -162,18 +145,18 @@ void merge_boundary_results(ThreadData* thread_data, int num_threads) {
             continue;
         }
         
-        // Check if the last character of the previous chunk is the same as the first character of the current chunk
+        // Check letter ran across 
         if (prev->last_char == curr->first_char) {
-            // Merge the counts
+            // Merge 
             Result* prev_result = &thread_results[prev->thread_id];
             Result* curr_result = &thread_results[curr->thread_id];
+
             
-            // If the previous result has entries, update the last entry
             if (prev_result->size > 0) {
                 // Remove the first entry from the current result
                 prev_result->counts[prev_result->size - 1] += curr_result->counts[0];
                 
-                // Shift all entries in the current result
+                // Shift 
                 for (int j = 0; j < curr_result->size - 1; j++) {
                     curr_result->counts[j] = curr_result->counts[j + 1];
                     curr_result->chars[j] = curr_result->chars[j + 1];
@@ -186,7 +169,7 @@ void merge_boundary_results(ThreadData* thread_data, int num_threads) {
     }
 }
 
-// Function to write all results to stdout
+
 void write_results(Result* results, int num_threads) {
     for (int i = 0; i < num_threads; i++) {
         Result* result = &results[i];
