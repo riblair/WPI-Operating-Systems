@@ -21,16 +21,16 @@ typedef struct {
     long end_offset; 
     char* filename; 
     char first_char; // these 4 account for going across chunk boundaries
-    uint32_t first_count; 
+    int first_count; 
     char last_char; 
-    uint32_t last_count; 
+    int last_count; 
     int thread_id; 
     int boundary_merged; // whetheer or not we have checked if letter go across borders 
 } ThreadData; 
 
 
 typedef struct {
-    uint32_t* counts;   // array of number of occurences of each letter 
+    int* counts;   // array of number of occurences of each letter 
     char* chars;    // array of letters entered 
     int entries; 
     int capacity;  
@@ -41,13 +41,13 @@ pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void init_result (Result* result, int initial_capacity) {
     // initialize in memory 
-    result->counts = (uint32_t*)malloc(initial_capacity * sizeof(uint32_t));
+    result->counts = (int*)malloc(initial_capacity * sizeof(int));
     result->chars = (char*)malloc(initial_capacity * sizeof(char)); 
     result->entries = 0; 
     result->capacity = initial_capacity; 
 }
 
-void add_entry(Result* result, uint32_t count, char c) {
+void add_entry(Result* result, int count, char c) {
     result->counts[result->entries] = count; 
     result->chars[result->entries] = c; 
     result->entries ++; 
@@ -87,7 +87,7 @@ void* thread_rle(void* arg) {
     Result* result = &thread_results[data->thread_id];
     init_result(result, 1024);
     
-    uint32_t count = 0;
+    int count = 0;
     char current;
     char c;
     // enter CR
