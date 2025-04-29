@@ -78,13 +78,10 @@ void* thread_rle(void* arg) {
     FILE* f1 = fopen(fname, "r");
     if (f1 == NULL) {
         printf("wpzip: cannot open file %s\n", fname);
-        pthread_mutex_unlock(&fmutex);
         return NULL;
     }
     
     // finds the start offset of the file 
-    // enter CR
-    pthread_mutex_lock(&mutex);
     fseek(f1, start, SEEK_SET);
     
     Result* result = &thread_results[data->thread_id];
@@ -93,7 +90,8 @@ void* thread_rle(void* arg) {
     uint32_t count = 0;
     char current;
     char c;
-    
+    // enter CR
+    pthread_mutex_lock(&mutex);
     if (start < end) {
         c = fgetc(f1);
         current = c;
@@ -169,7 +167,7 @@ void merge_boundary_results(ThreadData* thread_data, int num_threads) {
 void write_results(Result* results, int num_threads) {
     for (int i = 0; i < num_threads; i++) {
         Result* result = &results[i];
-        for (int j = 0; j < result->size; j++) {
+        for (int j = 0; j < result->entries; j++) {
             fwrite(&result->counts[j], 4, 1, stdout);
             fwrite(&result->chars[j], 1, 1, stdout);
         }
