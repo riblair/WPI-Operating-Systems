@@ -4,8 +4,8 @@ Project 06: Concurrency
 Members
 -------
 
-1. student A (email@wpi.edu)
-2. student B (email@wpi.edu)
+1. Jonathan Tinti (jrtinti@wpi.edu)
+2. Riley Blair (rpblair@wpi.edu)
 
 Design: Correctness (40 points)
 ------
