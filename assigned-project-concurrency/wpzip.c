@@ -74,8 +74,7 @@ void* thread_rle(void* arg) {
     long start = data->start_offset;
     long end = data->end_offset;
     
-    // enter CR
-    pthread_mutex_lock(&mutex);
+    
     FILE* f1 = fopen(fname, "r");
     if (f1 == NULL) {
         printf("wpzip: cannot open file %s\n", fname);
@@ -84,6 +83,8 @@ void* thread_rle(void* arg) {
     }
     
     // finds the start offset of the file 
+    // enter CR
+    pthread_mutex_lock(&mutex);
     fseek(f1, start, SEEK_SET);
     
     Result* result = &thread_results[data->thread_id];
@@ -123,10 +124,8 @@ void* thread_rle(void* arg) {
         }
     }
     
-    if (result->size > 0) {
-        data->first_char = result->chars[0];
-        data->first_count = result->counts[0];
-    }
+    data->first_char = result->chars[0];
+    data->first_count = result->counts[0];
     
     fclose(f1);
     pthread_mutex_unlock(&mutex);
@@ -147,22 +146,19 @@ void merge_boundary_results(ThreadData* thread_data, int num_threads) {
         
         // Check letter ran across 
         if (prev->last_char == curr->first_char) {
-            // Merge 
             Result* prev_result = &thread_results[prev->thread_id];
             Result* curr_result = &thread_results[curr->thread_id];
 
             
-            if (prev_result->size > 0) {
-                // Remove the first entry from the current result
-                prev_result->counts[prev_result->size - 1] += curr_result->counts[0];
+            // Remove the first entry from the current result
+            prev_result->counts[prev_result->entries - 1] += curr_result->counts[0];
                 
-                // Shift 
-                for (int j = 0; j < curr_result->size - 1; j++) {
-                    curr_result->counts[j] = curr_result->counts[j + 1];
-                    curr_result->chars[j] = curr_result->chars[j + 1];
-                }
-                curr_result->size--;
+            // Shift 
+            for (int j = 0; j < curr_result->entries - 1; j++) {
+                curr_result->counts[j] = curr_result->counts[j + 1];
+                curr_result->chars[j] = curr_result->chars[j + 1];
             }
+            curr_result->entries--;
             
             curr->boundary_merged = 1;
         }
