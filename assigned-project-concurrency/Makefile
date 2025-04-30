@@ -1,5 +1,5 @@
 concur: wpzip.c
-	gcc -Wall -Werror -pthread -o wpzip wpzip.c
+	gcc -g -Wall -Werror -pthread -o wpzip wpzip.c
 
 clean:
 	rm wpzip 
