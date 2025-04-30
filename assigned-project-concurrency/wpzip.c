@@ -16,27 +16,34 @@ begins AAB we will not add up to 5 A's, which I guess is not totally wrong but w
 */
 
 
+
 typedef struct {
     long start_offset; // where for the thread to start 
     long end_offset; 
     char* filename; 
     char first_char; // these 4 account for going across chunk boundaries
     int first_count; 
+    int first_count; 
     char last_char; 
+    int last_count; 
     int last_count; 
     int thread_id; 
     int boundary_merged; // whetheer or not we have checked if letter go across borders 
 } ThreadData; 
 
 
+
 typedef struct {
+    int* counts;   // array of number of occurences of each letter 
     int* counts;   // array of number of occurences of each letter 
     char* chars;    // array of letters entered 
     int entries; 
     int capacity;  
+    int capacity;  
 } Result; 
 
 Result* thread_results; 
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 Result* init_result (int initial_capacity) {
@@ -50,6 +57,7 @@ Result* init_result (int initial_capacity) {
 }
 
 void add_entry(Result* result, int count, char c) {
+void add_entry(Result* result, int count, char c) {
     result->counts[result->entries] = count; 
     result->chars[result->entries] = c; 
     result->entries ++; 
@@ -60,6 +68,7 @@ void free_result(Result* result) {
     free(result->chars);
     result->capacity = 0;
 }
+
 
 
 long get_file_size(const char* filename) {
@@ -77,6 +86,7 @@ void* thread_rle(void* arg) {
     long end = data->end_offset;
     
     
+    
     FILE* f1 = fopen(fname, "r");
     if (f1 == NULL) {
         printf("wpzip: cannot open file %s\n", fname);
@@ -90,8 +100,11 @@ void* thread_rle(void* arg) {
     init_result(1024);
     
     int count = 0;
+    int count = 0;
     char current;
     char c;
+    // enter CR
+    pthread_mutex_lock(&mutex);
     // enter CR
     pthread_mutex_lock(&mutex);
     if (start < end) {
@@ -101,6 +114,7 @@ void* thread_rle(void* arg) {
         start++;
     }
     
+    // Process the rest 
     // Process the rest 
     while (start < end) {
         c = fgetc(f1);
@@ -126,8 +140,11 @@ void* thread_rle(void* arg) {
     
     data->first_char = result->chars[0];
     data->first_count = result->counts[0];
+    data->first_char = result->chars[0];
+    data->first_count = result->counts[0];
     
     fclose(f1);
+    pthread_mutex_unlock(&mutex);
     pthread_mutex_unlock(&mutex);
     
     return NULL;
@@ -145,11 +162,15 @@ void merge_boundary_results(ThreadData* thread_data, int num_threads) {
         }
         
         // Check letter ran across 
+        // Check letter ran across 
         if (prev->last_char == curr->first_char) {
             Result* prev_result = &thread_results[prev->thread_id];
             Result* curr_result = &thread_results[curr->thread_id];
 
+
             
+            // Remove the first entry from the current result
+            prev_result->counts[prev_result->entries - 1] += curr_result->counts[0];
             // Remove the first entry from the current result
             prev_result->counts[prev_result->entries - 1] += curr_result->counts[0];
                 
@@ -157,7 +178,12 @@ void merge_boundary_results(ThreadData* thread_data, int num_threads) {
             for (int j = 0; j < curr_result->entries - 1; j++) {
                 curr_result->counts[j] = curr_result->counts[j + 1];
                 curr_result->chars[j] = curr_result->chars[j + 1];
+            // Shift 
+            for (int j = 0; j < curr_result->entries - 1; j++) {
+                curr_result->counts[j] = curr_result->counts[j + 1];
+                curr_result->chars[j] = curr_result->chars[j + 1];
             }
+            curr_result->entries--;
             curr_result->entries--;
             
             curr->boundary_merged = 1;
