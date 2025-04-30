@@ -33,8 +33,11 @@ Response.
 
 Responses.
 
-### Primitives 
-    Great question. 
+Our current implementation does not require any synchronization primitives as the sections ran in parallel have no race conditions. We syncronize the reading of a file by waiting until all child threads have terminated using pthread_join before continuing onto the next file.
+We plan on revisiting our implementation to better use synchronization primitives to increase our speed.
+But, as the design is currently, we know that our algorithm is consistent across runs because there exist no runtime-specific errors. 
+No race conditions exist due to the lack of critical regions in our code, and no deadlocks or livelocks can occur because there are no primatives in use.
+This makes running determanistic.  
 
 > 3. Additional design details that are not covered in the previous two questions. 
 

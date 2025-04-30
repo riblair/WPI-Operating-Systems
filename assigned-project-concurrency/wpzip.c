@@ -91,8 +91,8 @@ void* thread_rle(void* arg) {
     int count = 0;
     char current;
     char c;
-    // enter CR
-    pthread_mutex_lock(&mutex);
+    // // enter CR
+    // pthread_mutex_lock(&mutex);
     if (start < end) {
         c = fgetc(f1);
         current = c;
@@ -127,7 +127,7 @@ void* thread_rle(void* arg) {
     data->first_count = result->counts[0];
     
     fclose(f1);
-    pthread_mutex_unlock(&mutex);
+    // pthread_mutex_unlock(&mutex);
     
     return NULL;
 }
@@ -188,8 +188,8 @@ Result* merge(Result* results[], int num_threads, int num_files) {
         }
         // copy rest of data into big results 
         for(int j = start; j < results[i]->entries; j++) {
-            big_results->counts[big_results->entries] = results[0]->counts[j];
-            big_results->chars[big_results->entries] = results[0]->chars[j];
+            big_results->counts[big_results->entries] = results[i]->counts[j];
+            big_results->chars[big_results->entries] = results[i]->chars[j];
             big_results->entries++;
         }
     }
@@ -253,7 +253,7 @@ void per_file(Result* results_array[], int file_num, char* filename, int num_thr
 int main(int argc, char **argv) {
     // If there aren't enough arguments, exit with error.
     if (argc < 2) {
-        printf("wzip: file1 [file2 ...]\n");
+        printf("wpzip: numOfThreads file1 [file2 ...]\n");
         exit(1);
     }
     /* El Plan
@@ -276,7 +276,7 @@ int main(int argc, char **argv) {
     }
     Result* results_array[num_threads*num_files];
     for(int i = 0; i < num_threads*num_files; i++) {
-        results_array[i] = init_result(1024);
+        results_array[i] = init_result(0xfffff);
     }
 
     // Go through each file.
