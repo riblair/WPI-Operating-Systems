@@ -5,6 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 
 /*
 
@@ -33,10 +34,11 @@ typedef struct {
     int thread_id; 
     int boundary_merged; // whetheer or not we have checked if letter go across borders 
     Result* r;
+    FILE* fp;
 } ThreadData; 
 
 Result* thread_results; 
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 Result* init_result (int initial_capacity) {
     // initialize in memory 
@@ -72,39 +74,32 @@ long get_file_size(const char* filename) {
 
 void* thread_rle(void* arg) {
     ThreadData* data = (ThreadData*)arg;
-    char* fname = data->filename;
     long start = data->start_offset;
     long end = data->end_offset;
     Result* result = data->r;
-    
-    FILE* f1 = fopen(fname, "r");
-    if (f1 == NULL) {
-        printf("wpzip: cannot open file %s\n", fname);
-        return NULL;
-    }
-    
+    FILE* fp = data->fp;
+    // init_result(1024);
+    // char buffer[(end-start)+1];
+
+    pthread_mutex_lock(&buffer_mutex);
+    char* buffer = mmap(NULL, end-start, PROT_READ, MAP_PRIVATE, fileno(fp), start);
+    pthread_mutex_unlock(&buffer_mutex);
+
     // finds the start offset of the file 
-    fseek(f1, start, SEEK_SET);
+    // pthread_mutex_lock(&buffer_mutex);
+    // fseek(fp, start, SEEK_SET);
+    // int bytes_read = read(fileno(fp), &buffer, end-start);
+    // printf("start %ld, end %ld, bytes read %d\n", start, end, bytes_read);
+    // fflush(stdout);
     
-    init_result(1024);
-    
-    int count = 0;
-    char current;
+    int count = 1;
+    char current = buffer[0];
     char c;
-    // // enter CR
-    // pthread_mutex_lock(&mutex);
-    if (start < end) {
-        c = fgetc(f1);
-        current = c;
-        count = 1;
-        start++;
-    }
-    
+
     // Process the rest 
-    while (start < end) {
-        c = fgetc(f1);
-        start++;
-        
+    for(int iter_count = 1; iter_count < end-start; iter_count++){
+        c = buffer[iter_count];
+    
         // if we encounter a new character restart the count 
         if (c != current) {
             add_entry(result, count, current);
@@ -114,21 +109,13 @@ void* thread_rle(void* arg) {
             count++;
         }
     }
-    
-    if (count > 0) {
-        data->last_char = current;
-        data->last_count = count;
-        if (end != get_file_size(fname) || start == end) {
-            add_entry(result, count, current);
-        }
-    }
-    
+
+    data->last_char = current;
+    data->last_count = count;
+    add_entry(result, count, current);
     data->first_char = result->chars[0];
     data->first_count = result->counts[0];
-    
-    fclose(f1);
-    // pthread_mutex_unlock(&mutex);
-    
+    // free(buffer);
     return NULL;
 }
 
@@ -224,6 +211,11 @@ void per_file(Result* results_array[], int file_num, char* filename, int num_thr
         threads_d[i] = malloc(sizeof(ThreadData));
     }
 
+    FILE* fp = fopen(filename, "r");
+    if (fp == NULL) {
+        printf("wpzip: cannot open file %s\n", filename);
+        return;
+    }
     for(int i = 0; i < num_threads; i++) {
 
         threads_d[i]->thread_id = i;
@@ -231,6 +223,7 @@ void per_file(Result* results_array[], int file_num, char* filename, int num_thr
         threads_d[i]->boundary_merged = 0; 
         threads_d[i]->start_offset = (chunk * i);
         threads_d[i]->r = results_array[i+file_num*num_threads];
+        threads_d[i]->fp = fp;
         if (i != num_threads - 1) {
             threads_d[i]->end_offset = (chunk * (i+1));  
         } else {
@@ -245,9 +238,9 @@ void per_file(Result* results_array[], int file_num, char* filename, int num_thr
     }
 
     for(int i=0; i < num_threads; i++) {
-        // free(threads[i]); 
         free(threads_d[i]);
     }
+    fclose(fp);
 }
 
 int main(int argc, char **argv) {
