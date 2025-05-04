@@ -5,6 +5,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/mman.h>
 
 /*
 
@@ -26,6 +28,7 @@ typedef struct {
     long start_offset; // where for the thread to start 
     long end_offset; 
     char* filename; 
+    char* file_data;
     char first_char; // these 4 account for going across chunk boundaries
     int first_count; 
     char last_char; 
@@ -72,19 +75,10 @@ long get_file_size(const char* filename) {
 
 void* thread_rle(void* arg) {
     ThreadData* data = (ThreadData*)arg;
-    char* fname = data->filename;
     long start = data->start_offset;
     long end = data->end_offset;
     Result* result = data->r;
-    
-    FILE* f1 = fopen(fname, "r");
-    if (f1 == NULL) {
-        printf("wpzip: cannot open file %s\n", fname);
-        return NULL;
-    }
-    
-    // finds the start offset of the file 
-    fseek(f1, start, SEEK_SET);
+    char* file_data = data->file_data;
     
     init_result(1024);
     
@@ -94,7 +88,7 @@ void* thread_rle(void* arg) {
     // // enter CR
     // pthread_mutex_lock(&mutex);
     if (start < end) {
-        c = fgetc(f1);
+        c = file_data[start];
         current = c;
         count = 1;
         start++;
@@ -102,9 +96,7 @@ void* thread_rle(void* arg) {
     
     // Process the rest 
     while (start < end) {
-        c = fgetc(f1);
-        start++;
-        
+        c = file_data[start];
         // if we encounter a new character restart the count 
         if (c != current) {
             add_entry(result, count, current);
@@ -113,20 +105,20 @@ void* thread_rle(void* arg) {
         } else {
             count++;
         }
+        start++;
     }
     
     if (count > 0) {
         data->last_char = current;
         data->last_count = count;
-        if (end != get_file_size(fname) || start == end) {
+        if (start == end) {
             add_entry(result, count, current);
         }
     }
     
     data->first_char = result->chars[0];
     data->first_count = result->counts[0];
-    
-    fclose(f1);
+
     // pthread_mutex_unlock(&mutex);
     
     return NULL;
@@ -214,20 +206,22 @@ void write_results(Result* big_result) {
 // }
 
 void per_file(Result* results_array[], int file_num, char* filename, int num_threads){
+    int fd = open(filename, O_RDONLY); 
+
     long file_size = get_file_size(filename); 
+    // mmap the entire file 
+    char* mapped_data = mmap(NULL, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
     int chunk = file_size / num_threads; 
 
     // threads first 
     pthread_t threads[num_threads];
     ThreadData* threads_d[num_threads]; 
+
     for(int i = 0; i < num_threads; i++) {
         threads_d[i] = malloc(sizeof(ThreadData));
-    }
-
-    for(int i = 0; i < num_threads; i++) {
-
         threads_d[i]->thread_id = i;
         threads_d[i]->filename = filename; 
+        threads_d[i]->file_data = mapped_data;
         threads_d[i]->boundary_merged = 0; 
         threads_d[i]->start_offset = (chunk * i);
         threads_d[i]->r = results_array[i+file_num*num_threads];
@@ -244,10 +238,7 @@ void per_file(Result* results_array[], int file_num, char* filename, int num_thr
         pthread_join(threads[i], NULL); 
     }
 
-    for(int i=0; i < num_threads; i++) {
-        // free(threads[i]); 
-        free(threads_d[i]);
-    }
+    munmap(mapped_data, file_size); 
 }
 
 int main(int argc, char **argv) {
