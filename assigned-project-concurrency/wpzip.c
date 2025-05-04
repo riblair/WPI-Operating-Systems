@@ -246,11 +246,13 @@ int main(int argc, char **argv) {
     int num_threads = atoi(argv[1]);
     int num_files = (argc-2);
 
-    int min_chunk_size = 16384;
+    int min_chunk_size = 2048;
     long largest_file = 0;
     for (int i = 2; i < argc; i++) {
         long sz = get_file_size(argv[i]);
-        if (sz > largest_file) largest_file = sz;
+        if (sz > largest_file) {
+            largest_file = sz; 
+        }
     }
 
     if (num_threads == 0) {
@@ -258,10 +260,10 @@ int main(int argc, char **argv) {
     }
 
     // Adjust threads based on largest file
-    int suggested_threads = largest_file / min_chunk_size;
-    if (suggested_threads < 1) suggested_threads = 1;
-    if (num_threads > suggested_threads)
-    num_threads = suggested_threads;
+    int lower_bound_threads = largest_file / min_chunk_size;
+    if (lower_bound_threads < 1) lower_bound_threads = 1;
+    if (num_threads > lower_bound_threads)
+    num_threads = lower_bound_threads;
 
     Result* results_array[num_threads*num_files];
     for(int i = 0; i < num_threads*num_files; i++) {
