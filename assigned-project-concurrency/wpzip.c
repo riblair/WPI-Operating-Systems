@@ -36,10 +36,11 @@ typedef struct {
     int thread_id; 
     int boundary_merged; // whetheer or not we have checked if letter go across borders 
     Result* r;
+    FILE* fp;
 } ThreadData; 
 
 Result* thread_results; 
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 Result* init_result (int initial_capacity) {
     // initialize in memory 
@@ -82,8 +83,8 @@ void* thread_rle(void* arg) {
     
     init_result(1024);
     
-    int count = 0;
-    char current;
+    int count = 1;
+    char current = buffer[0];
     char c;
     // // enter CR
     // pthread_mutex_lock(&mutex);
@@ -225,6 +226,7 @@ void per_file(Result* results_array[], int file_num, char* filename, int num_thr
         threads_d[i]->boundary_merged = 0; 
         threads_d[i]->start_offset = (chunk * i);
         threads_d[i]->r = results_array[i+file_num*num_threads];
+        threads_d[i]->fp = fp;
         if (i != num_threads - 1) {
             threads_d[i]->end_offset = (chunk * (i+1));  
         } else {

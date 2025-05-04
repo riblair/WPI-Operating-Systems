@@ -8,7 +8,7 @@ TARG = solution/test_goatfs
 
 # specify compiler, compile flags, and needed libs
 CC = gcc
-OPTS = -Wall -Werror
+OPTS = -Wall -Werror -g
 LIBS = -lm
 
 # this translates .c files in src list to .o’s

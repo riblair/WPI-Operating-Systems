@@ -4,6 +4,16 @@
 # include "disk.h"
 # include <stdint.h> // uint32_t
 
+#define max(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a > _b ? _a : _b; })
+
+#define min(a,b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a < _b ? _a : _b; })
+
 // internal error codes
 #define ERR_BAD_MAGIC_NUMBER (-1)
 #define ERR_NOT_ENOUGH_BLOCKS (-2)
@@ -29,7 +39,8 @@ extern bool wremove(size_t inumber);
 extern ssize_t stat(size_t inumber);
 ssize_t wfsread(size_t inumber, char *data, size_t length, size_t offset);
 ssize_t wfswrite(size_t inumber, char *data, size_t length, size_t offset);
-//
+
+// void display_super_block(struct _SuperBlock);
 
 struct _SuperBlock {		// Superblock structure
     unsigned int MagicNumber;	// File system magic number
@@ -60,5 +71,7 @@ union _Block {
 typedef union _Block Block;
 
 DISK* _disk;    // disk handler
+uint8_t* i_bitmap;
+uint8_t* d_bitmap;
 
 #endif
