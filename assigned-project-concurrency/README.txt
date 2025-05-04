@@ -52,8 +52,8 @@ Performance Optimization (10 points)
 
 Responses.
 
-we plan on...
-
+We tried to use fseek and using mutex for that but that did not work. Then we used mmap which was the biggest jump in speedup. 
+We are trying allocate the correct number of threads based on the situation but we are struggling 
 > 2. Description of any new workloads you used to understand the performance bottlenecks.
 
 Responses.

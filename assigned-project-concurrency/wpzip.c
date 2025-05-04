@@ -17,6 +17,8 @@ begins AAB we will not add up to 5 A's, which I guess is not totally wrong but w
 
 */
 
+#define SMALL_FILE_THRESHOLD 512
+
 typedef struct {
     int* counts;   // array of number of occurences of each letter 
     char* chars;    // array of letters entered 
@@ -39,8 +41,6 @@ typedef struct {
     FILE* fp;
 } ThreadData; 
 
-Result* thread_results; 
-pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 Result* init_result (int initial_capacity) {
     // initialize in memory 
@@ -53,6 +53,11 @@ Result* init_result (int initial_capacity) {
 }
 
 void add_entry(Result* result, int count, char c) {
+    if (result->entries == result->capacity) {
+        result->capacity *= 2;
+        result->counts = realloc(result->counts, result->capacity * sizeof(int));
+        result->chars = realloc(result->chars, result->capacity * sizeof(char));
+    }
     result->counts[result->entries] = count; 
     result->chars[result->entries] = c; 
     result->entries++; 
@@ -81,19 +86,15 @@ void* thread_rle(void* arg) {
     Result* result = data->r;
     char* file_data = data->file_data;
     
-    init_result(1024);
-    
     int count = 1;
     char current;
     char c;
     // // enter CR
     // pthread_mutex_lock(&mutex);
-    if (start < end) {
-        c = file_data[start];
-        current = c;
-        count = 1;
-        start++;
-    }
+    c = file_data[start];
+    current = c;
+    count = 1;
+    start++;
     
     // Process the rest 
     while (start < end) {
@@ -125,68 +126,46 @@ void* thread_rle(void* arg) {
     return NULL;
 }
 
-// Function to merge results where character runs cross chunk boundaries
-void merge_boundary_results(ThreadData* thread_data, int num_threads) {
-    for (int i = 1; i < num_threads; i++) {
-        ThreadData* prev = &thread_data[i-1];
-        ThreadData* curr = &thread_data[i];
-        
-        // Skip if from different files 
-        if (strcmp(prev->filename, curr->filename) != 0 || curr->boundary_merged) {
-            continue;
-        }
-        
-        // Check letter ran across 
-        if (prev->last_char == curr->first_char) {
-            Result* prev_result = &thread_results[prev->thread_id];
-            Result* curr_result = &thread_results[curr->thread_id];
+Result* merge(Result* results[], int num_results) {
+    long estimated_total = 0;
+    for (int i = 0; i < num_results; i++) {
+        estimated_total += results[i]->entries;
+    }
 
-            // Remove the first entry from the current result
-            prev_result->counts[prev_result->entries - 1] += curr_result->counts[0];
-                
-            // Shift 
-            for (int j = 0; j < curr_result->entries - 1; j++) {
-                curr_result->counts[j] = curr_result->counts[j + 1];
-                curr_result->chars[j] = curr_result->chars[j + 1];
+    Result* merged = init_result(estimated_total);
+
+    char last_char = 0;
+    int last_count = 0;
+    int first = 1; 
+
+    for (int i = 0; i < num_results; i++) {
+        Result* r = results[i];
+        for (int j = 0; j < r->entries; j++) {
+            char c = r->chars[j];
+            int count = r->counts[j];
+
+            if (first) {
+                last_char = c;
+                last_count = count;
+                first = 0;
+            } else if (c == last_char) {
+                // Merge with previous
+                last_count += count;
+            } else {
+                // Push previous and start new
+                add_entry(merged, last_count, last_char);
+                last_char = c;
+                last_count = count;
             }
-            curr_result->entries--;
-            curr->boundary_merged = 1;
         }
     }
-}
 
-Result* merge(Result* results[], int num_threads, int num_files) {
-    //make big results object
-    long entry_sum = 0;
-    for(int i = 0; i < num_threads*num_files; i++) {
-        entry_sum += results[i]->entries;
+    // Push the final accumulated entry
+    if (!first) {
+        add_entry(merged, last_count, last_char);
     }
 
-    Result* big_results = init_result(entry_sum);
-
-    //copy 0 into beginning of big_result 
-    for(int i = 0; i < results[0]->entries; i++) {
-        big_results->counts[i] = results[0]->counts[i];
-        big_results->chars[i] = results[0]->chars[i];
-    }
-    big_results->entries = results[0]->entries;
-
-    for(int i = 1; i < num_threads*num_files; i++) {
-        // look at beginning of 1 and end of new big_results,
-        // if same, merge,
-        int start = 0;
-        if(big_results->chars[big_results->entries-1] == results[i]->chars[0]) {
-            big_results->counts[big_results->entries-1] += results[i]->counts[0];
-            start++;
-        }
-        // copy rest of data into big results 
-        for(int j = start; j < results[i]->entries; j++) {
-            big_results->counts[big_results->entries] = results[i]->counts[j];
-            big_results->chars[big_results->entries] = results[i]->chars[j];
-            big_results->entries++;
-        }
-    }
-    return big_results;
+    return merged;
 }
 
 void write_results(Result* big_result) {
@@ -196,33 +175,32 @@ void write_results(Result* big_result) {
     }
 }
 
-// void write_results(Result* results[], int num_threads) {
-//     for (int i = 0; i < num_threads; i++) {
-//         Result* result = &results[i];
-//         for (int j = 0; j < result->entries; j++) {
-//             fwrite(&result->counts[j], 4, 1, stdout);
-//             fwrite(&result->chars[j], 1, 1, stdout);
-//         }
-//     }
-// }
-
 void per_file(Result* results_array[], int file_num, char* filename, int num_threads){
     int fd = open(filename, O_RDONLY); 
 
     long file_size = get_file_size(filename); 
-    // mmap the entire file 
-    char* mapped_data = mmap(NULL, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    int use_mmap = file_size > SMALL_FILE_THRESHOLD;
     int chunk = file_size / num_threads; 
-
     // threads first 
     pthread_t threads[num_threads];
     ThreadData* threads_d[num_threads]; 
+    char* data = NULL;
+
+    if (use_mmap) {
+        // mmap the entire file 
+        data = mmap(NULL, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    }
+    else {
+        data = malloc(file_size); 
+        ssize_t read_bytes = read(fd, data, file_size);
+        read_bytes = read_bytes; 
+    }
 
     for(int i = 0; i < num_threads; i++) {
         threads_d[i] = malloc(sizeof(ThreadData));
         threads_d[i]->thread_id = i;
         threads_d[i]->filename = filename; 
-        threads_d[i]->file_data = mapped_data;
+        threads_d[i]->file_data = data;
         threads_d[i]->boundary_merged = 0; 
         threads_d[i]->start_offset = (chunk * i);
         threads_d[i]->r = results_array[i+file_num*num_threads];
@@ -239,7 +217,14 @@ void per_file(Result* results_array[], int file_num, char* filename, int num_thr
         pthread_join(threads[i], NULL); 
     }
 
-    munmap(mapped_data, file_size); 
+    if (use_mmap) {
+        munmap(data, file_size); 
+    }
+    else {
+        free(data); 
+    }
+    close(fd); 
+    
 }
 
 int main(int argc, char **argv) {
@@ -261,14 +246,26 @@ int main(int argc, char **argv) {
     int num_threads = atoi(argv[1]);
     int num_files = (argc-2);
 
-    if(num_threads == 0) {
-        // determing our own number...
-        // num_threads = sysconf(_SC_NPROCESSORS_ONLN);
-        num_threads = 4;
+    int min_chunk_size = 16384;
+    long largest_file = 0;
+    for (int i = 2; i < argc; i++) {
+        long sz = get_file_size(argv[i]);
+        if (sz > largest_file) largest_file = sz;
     }
+
+    if (num_threads == 0) {
+        num_threads = sysconf(_SC_NPROCESSORS_ONLN);
+    }
+
+    // Adjust threads based on largest file
+    int suggested_threads = largest_file / min_chunk_size;
+    if (suggested_threads < 1) suggested_threads = 1;
+    if (num_threads > suggested_threads)
+    num_threads = suggested_threads;
+
     Result* results_array[num_threads*num_files];
     for(int i = 0; i < num_threads*num_files; i++) {
-        results_array[i] = init_result(0xfffff);
+        results_array[i] = init_result(largest_file / num_threads / 2);
     }
 
     // Go through each file.
@@ -277,11 +274,10 @@ int main(int argc, char **argv) {
         per_file(results_array, i-2, filename, num_threads); 
     }
     
-    Result* final_result = merge(results_array, num_threads, num_files);
+    int total_chunks = num_threads * num_files;
+    Result* final_result = merge(results_array, total_chunks);
 
     write_results(final_result);   
-    
-    
 
     // Exit with success.
     exit(0);
