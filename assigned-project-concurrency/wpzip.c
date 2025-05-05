@@ -20,12 +20,13 @@ begins AAB we will not add up to 5 A's, which I guess is not totally wrong but w
 
 #define SMALL_FILE_THRESHOLD 1024
 
-typedef struct {
+typedef struct Result{
     int* counts;   // array of number of occurences of each letter 
     char* chars;    // array of letters entered 
     int entries;  
     int capacity;
-    Result* next;  
+    int start;
+    struct Result* next;  
 } Result; 
 
 typedef struct {
@@ -37,17 +38,24 @@ typedef struct {
     FILE* fp;
 } ThreadData; 
 
+Result* head;
+Result * head_iter;
+pthread_mutex_t* thread_count_m;
+sem_t* thread_s;
+long file_size;
+int threads_per_file;
+int threads_done = 0;
+
 Result* init_result (int initial_capacity) {
     // initialize in memory 
     Result* result = (Result*)malloc(sizeof(Result));
     result->counts = (int*)malloc(initial_capacity * sizeof(int));
     result->chars = (char*)malloc(initial_capacity * sizeof(char)); 
     result->entries = 0; 
+    result->start = 0;
     result->capacity = initial_capacity; 
     return result;
 }
-
-// TODO: need a method to dynamically make results larger...
 
 void free_result(Result* result) {
     free(result->counts);
@@ -107,69 +115,53 @@ void* thread_rle(void* arg) {
 
     if(count > 0 && start == end) add_entry(result, count, current);
     //update that this thread has finished. Exit condition for main thread 
-    pthread_mutex_lock(&thread_count_m);
+    pthread_mutex_lock(thread_count_m);
     threads_done++;
-    pthread_mutex_unlock(&thread_count_m);
+    pthread_mutex_unlock(thread_count_m);
     // notify that this thread is done working such that other threads can spawn.
-    sem_post(&thread_s);
+    sem_post(thread_s);
     return NULL;
 }
 
-Result* merge(Result* result_LL, long total_threads) {
-    Result* merged = init_result(total_threads * SMALL_FILE_THRESHOLD);
-
-    char last_char = 0;
-    int last_count = 0;
-    int first = 1; 
-
-    // TODO: change this to work with a LL instead of an array.
-    // perhaps even better, we dont need to create a new results object all together, just amend the LL
-    for (int i = 0; i < num_results; i++) {
-        Result* r = results[i];
-        for (int j = 0; j < r->entries; j++) {
-            char c = r->chars[j];
-            int count = r->counts[j];
-
-            if (first) {
-                last_char = c;
-                last_count = count;
-                first = 0;
-            } else if (c == last_char) {
-                // Merge with previous
-                last_count += count;
-            } else {
-                // Push previous and start new
-                add_entry(merged, last_count, last_char);
-                last_char = c;
-                last_count = count;
-            }
+void merge(Result* result_LL) {
+    Result* result_iter = result_LL;
+    while(result_iter->next != NULL && result_iter->next->entries != 0) {
+        if(result_iter->chars[result_iter->entries-1] == result_iter->next->chars[0]) {
+            result_iter->counts[result_iter->entries-1] += result_iter->next->counts[0];
+            result_iter->next->start = 1;
+        }
+        // edge case where next is a single entry that was absorbed by the result_iter
+        if(!(result_iter->next->entries - result_iter->next->start)) {
+            Result* temp = result_iter->next;
+            result_iter->next = result_iter->next->next;
+            free(temp);
+        }
+        else {
+            result_iter = result_iter->next;
         }
     }
-
-    // Push the final accumulated entry
-    if (!first) {
-        add_entry(merged, last_count, last_char);
-    }
-
-    return merged;
 }
 
-void write_results(Result* big_result) {
+void write_results(Result* result_LL) {
     // this could very easily be adapted to work with LL, might want to do this
-    for (int j = 0; j < big_result->entries; j++) {
-        fwrite(&big_result->counts[j], 4, 1, stdout);
-        fwrite(&big_result->chars[j], 1, 1, stdout);
+    Result* result_iter = result_LL;
+    while(result_iter->next != NULL && result_iter->next->entries != 0) {
+        for (int i = result_iter->start; i < result_iter->entries; i++) {
+            fwrite(&result_iter->counts[i], 4, 1, stdout);
+            fwrite(&result_iter->chars[i], 1, 1, stdout);
+        }
+        result_iter = result_iter->next;
     }
 }
 
-ThreadData* init_threadData_array(Result* head_iter, char* filename, long file_size, int threads_per_file) {
+ThreadData** init_threadData_array(Result* head_iter, char* filename, long file_size, int threads_per_file) {
     // initialize threaddata objects for use in threads
     int fd = open(filename, O_RDONLY); 
     int use_mmap = file_size > SMALL_FILE_THRESHOLD;
     int chunk = file_size / threads_per_file; 
     // threads first 
     // pthread_t threads[num_threads];
-    ThreadData* threads_d[threads_per_file]; 
+    ThreadData** threads_d = malloc(threads_per_file*sizeof(ThreadData));
     char* data = NULL;
 
     Result* curr_iter = head_iter;
@@ -201,7 +193,6 @@ ThreadData* init_threadData_array(Result* head_iter, char* filename, long file_s
     }
     head_iter = curr_iter;
     return threads_d;
-
 }
 
 void per_file(Result* results_array[], int file_num, char* filename, int num_threads){
@@ -254,14 +245,6 @@ void per_file(Result* results_array[], int file_num, char* filename, int num_thr
     
 }
 
-Result* head;
-Result * head_iter;
-pthread_mutex_t* thread_count_m;
-sem_t* thread_s;
-long file_size;
-int threads_per_file;
-int threads_done = 0;
-
 /* 
         El Plan
         One file and ALL threads
@@ -291,11 +274,10 @@ int main(int argc, char **argv) {
 
     head = init_result(SMALL_FILE_THRESHOLD / 4);
     head_iter = head;
-    pthread_t* thread_ptr; // used to point at the last thread for this 
     int total_threads = 0;
     // Go through each file.
-    for (int i = 2; i < argc; i++) {
-        char* filename = argv[i]; 
+    for (int i = 0; i < num_files; i++) {
+        char* filename = argv[i+2]; 
         file_size = get_file_size(filename);
         printf("File_size: %ld\n", file_size);
         // dynamically allocate threads based on size
@@ -304,15 +286,15 @@ int main(int argc, char **argv) {
         ThreadData** threads_d = init_threadData_array(head_iter, filename, file_size, threads_per_file);
 
         for(int j = 0; j < threads_per_file; j++) {
-            sem_wait(&thread_s);
+            sem_wait(thread_s);
             pthread_create(malloc(sizeof(pthread_t)), NULL, thread_rle, threads_d[j]);
         }
     }
     // wait for all threads to finish.
     while(threads_done != total_threads) {}
     
-    Result* final_result = merge(head, total_threads);
-    write_results(final_result);   
+    merge(head);
+    write_results(head);   
     // Exit with success.
     exit(0);
 }
