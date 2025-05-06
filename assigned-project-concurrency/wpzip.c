@@ -18,7 +18,10 @@ begins AAB we will not add up to 5 A's, which I guess is not totally wrong but w
 
 */
 
-#define SMALL_FILE_THRESHOLD 1024
+#define SMALL_FILE_THRESHOLD 4096
+
+#define MIN(A, B) ((A < B) ? (A) : (B))
+#define MAX(A, B) ((A > B) ? (A) : (B))
 
 typedef struct Result
 {
@@ -137,9 +140,9 @@ void *thread_rle(void *arg)
     return NULL;
 }
 
-void merge(Result *result_LL)
+void merge(Result **result_LL)
 {
-    Result *result_iter = result_LL;
+    Result *result_iter = *result_LL;
     while (result_iter->next != NULL && result_iter->next->entries != 0)
     {
         if (result_iter->chars[result_iter->entries - 1] == result_iter->next->chars[0])
@@ -148,6 +151,9 @@ void merge(Result *result_LL)
             result_iter->next->start = 1;
         }
         // edge case where next is a single entry that was absorbed by the result_iter
+        // THIS section is 100% responsible for the error we are seeing...
+        // something about merging the last result is causing errors...
+        // or something to do with files of size 1?
         if (!(result_iter->next->entries - result_iter->next->start))
         {
             Result *temp = result_iter->next;
@@ -197,7 +203,10 @@ ThreadData **init_threadData_array(Result** head_iter_ptr, char *filename, long 
     else
     {
         data = malloc(file_size);
-        read(fd, data, file_size);
+        long bytes_read = read(fd, data, file_size);
+        if(bytes_read == -1) {
+            exit(bytes_read); //error has occured
+        }
     }
     for (int i = 0; i < threads_per_file; i++)
     {
@@ -329,10 +338,9 @@ int main(int argc, char **argv)
         file_size = get_file_size(filename);
         // dynamically allocate threads based on size
         threads_per_file = file_size / SMALL_FILE_THRESHOLD;
-        if (threads_per_file == 0)
-        {
-            threads_per_file = 1;
-        }
+        // bind it between min and max values
+        threads_per_file = MIN(threads_per_file, num_threads);
+        threads_per_file = MAX(threads_per_file, 1);
         total_threads += threads_per_file;
         ThreadData **threads_d = init_threadData_array(&head_iter, filename, file_size, threads_per_file);
 
@@ -348,7 +356,7 @@ int main(int argc, char **argv)
         usleep(1000);
     }
 
-    merge(head);
+    merge(&head);
     write_results(head);
     pthread_mutex_destroy(thread_count_m);
     sem_destroy(thread_s);
