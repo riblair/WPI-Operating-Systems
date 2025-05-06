@@ -9,15 +9,6 @@
 #include <sys/mman.h>
 #include <semaphore.h>
 
-/*
-
-The main idea is that we have to break up the file into set size chunks and have each thread run
-on a different chunk. We need a struct for thread data and a struct for total results. We also
-have to figure out how to look to the adjacent chunk if lets say 1 chunk ends AAA and the next chunk
-begins AAB we will not add up to 5 A's, which I guess is not totally wrong but we should account for it.
-
-*/
-
 #define SMALL_FILE_THRESHOLD 4096
 
 #define MIN(A, B) ((A < B) ? (A) : (B))
@@ -104,8 +95,6 @@ void *thread_rle(void *arg)
     int count = 1;
     char current;
     char c;
-    // // enter CR
-    // pthread_mutex_lock(&mutex);
     c = file_data[start];
     current = c;
     count = 1;
@@ -151,9 +140,6 @@ void merge(Result **result_LL)
             result_iter->next->start = 1;
         }
         // edge case where next is a single entry that was absorbed by the result_iter
-        // THIS section is 100% responsible for the error we are seeing...
-        // something about merging the last result is causing errors...
-        // or something to do with files of size 1?
         if (!(result_iter->next->entries - result_iter->next->start))
         {
             Result *temp = result_iter->next;
@@ -233,75 +219,12 @@ ThreadData **init_threadData_array(Result** head_iter_ptr, char *filename, long 
     return threads_d;
 }
 
-void per_file(Result *results_array[], int file_num, char *filename, int num_threads)
-{
-    int fd = open(filename, O_RDONLY);
-
-    long file_size = get_file_size(filename);
-    int use_mmap = file_size > SMALL_FILE_THRESHOLD;
-    int chunk = file_size / num_threads;
-    // threads first
-    pthread_t threads[num_threads];
-    ThreadData *threads_d[num_threads];
-    char *data = NULL;
-
-    if (use_mmap)
-    {
-        // mmap the entire file
-        data = mmap(NULL, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    }
-    else
-    {
-        data = malloc(file_size);
-        ssize_t read_bytes = read(fd, data, file_size);
-        read_bytes = read_bytes;
-    }
-
-    for (int i = 0; i < num_threads; i++)
-    {
-        threads_d[i] = malloc(sizeof(ThreadData));
-        threads_d[i]->filename = filename;
-        threads_d[i]->file_data = data;
-        threads_d[i]->start_offset = (chunk * i);
-        threads_d[i]->r = results_array[i + file_num * num_threads];
-        if (i != num_threads - 1)
-        {
-            threads_d[i]->end_offset = (chunk * (i + 1));
-        }
-        else
-        {
-            threads_d[i]->end_offset = file_size;
-        }
-        pthread_create(&threads[i], NULL, thread_rle, threads_d[i]);
-    }
-
-    // wait for all threads to finish...
-    for (int i = 0; i < num_threads; i++)
-    {
-        pthread_join(threads[i], NULL);
-    }
-
-    if (use_mmap)
-    {
-        munmap(data, file_size);
-    }
-    else
-    {
-        free(data);
-    }
-    close(fd);
-}
-
-/*
-        El Plan
-        One file and ALL threads
-        partition sections based on file_size and num_threads
-        Each thread runs RLE on its section and returns a Results struct
-        We merge connected results
-        We then move on to next file
-        repeat until out of files...
-        We write to disk.
-    */
+/*  wpzip execution
+        We partition files based on file_size and assign it a number of threads to parse it.
+        Each thread runs RLE on its section and writes it to a Result struct
+        This result struct is kept in a linked-list to maintain ordering.
+        We wait for all threads to finish execution before merging and writing the encoded data to stdout.
+*/
 
 int main(int argc, char **argv)
 {
@@ -351,10 +274,7 @@ int main(int argc, char **argv)
         }
     }
     // wait for all threads to finish.
-    while (threads_done != total_threads)
-    {
-        usleep(1000);
-    }
+    while (threads_done != total_threads) usleep(1000);
 
     merge(&head);
     write_results(head);
@@ -362,14 +282,5 @@ int main(int argc, char **argv)
     sem_destroy(thread_s);
     free(thread_count_m);
     free(thread_s);
-    // Exit with success.
     exit(0);
 }
-
-/* summary of changes I wanna make
-
-    results_array should be a linked_list
-        additions need to happen in order, and should be gaurded by a primative
-    we should dynamically allocate a set of threads per file based on size
-        We should use a semaphore to gate creation of new threads
-*/
