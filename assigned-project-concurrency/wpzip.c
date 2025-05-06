@@ -7,85 +7,100 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <semaphore.h>
 
 /*
 
-The main idea is that we have to break up the file into set size chunks and have each thread run 
-on a different chunk. We need a struct for thread data and a struct for total results. We also 
+The main idea is that we have to break up the file into set size chunks and have each thread run
+on a different chunk. We need a struct for thread data and a struct for total results. We also
 have to figure out how to look to the adjacent chunk if lets say 1 chunk ends AAA and the next chunk
-begins AAB we will not add up to 5 A's, which I guess is not totally wrong but we should account for it. 
+begins AAB we will not add up to 5 A's, which I guess is not totally wrong but we should account for it.
 
 */
 
-#define SMALL_FILE_THRESHOLD 512
+#define SMALL_FILE_THRESHOLD 4096
 
-typedef struct {
-    int* counts;   // array of number of occurences of each letter 
-    char* chars;    // array of letters entered 
-    int entries;  
-    int capacity;  
-} Result; 
+#define MIN(A, B) ((A < B) ? (A) : (B))
+#define MAX(A, B) ((A > B) ? (A) : (B))
 
-typedef struct {
-    long start_offset; // where for the thread to start 
-    long end_offset; 
-    char* filename; 
-    char* file_data;
-    char first_char; // these 4 account for going across chunk boundaries
-    int first_count; 
-    char last_char; 
-    int last_count; 
-    int thread_id; 
-    int boundary_merged; // whetheer or not we have checked if letter go across borders 
-    Result* r;
-    FILE* fp;
-} ThreadData; 
+typedef struct Result
+{
+    int *counts; // array of number of occurences of each letter
+    char *chars; // array of letters entered
+    int entries;
+    int capacity;
+    int start;
+    struct Result *next;
+} Result;
 
+typedef struct
+{
+    long start_offset; // starting byte for T_RLE
+    long end_offset;   // end byte for T_RLE
+    char *filename;
+    char *file_data;
+    Result *r;
+    FILE *fp;
+} ThreadData;
 
-Result* init_result (int initial_capacity) {
-    // initialize in memory 
-    Result* result = (Result*)malloc(sizeof(Result));
-    result->counts = (int*)malloc(initial_capacity * sizeof(int));
-    result->chars = (char*)malloc(initial_capacity * sizeof(char)); 
-    result->entries = 0; 
-    result->capacity = initial_capacity; 
+Result *head;
+Result *head_iter;
+pthread_mutex_t *thread_count_m;
+sem_t *thread_s;
+long file_size;
+int threads_per_file;
+int threads_done = 0;
+
+Result *init_result(int initial_capacity)
+{
+    // initialize in memory
+    Result *result = (Result *)malloc(sizeof(Result));
+    result->counts = (int *)malloc(initial_capacity * sizeof(int));
+    result->chars = (char *)malloc(initial_capacity * sizeof(char));
+    result->entries = 0;
+    result->start = 0;
+    result->capacity = initial_capacity;
     return result;
 }
 
-void add_entry(Result* result, int count, char c) {
-    if (result->entries == result->capacity) {
-        result->capacity *= 2;
-        result->counts = realloc(result->counts, result->capacity * sizeof(int));
-        result->chars = realloc(result->chars, result->capacity * sizeof(char));
-    }
-    result->counts[result->entries] = count; 
-    result->chars[result->entries] = c; 
-    result->entries++; 
-}
-
-void free_result(Result* result) {
+void free_result(Result *result)
+{
     free(result->counts);
     free(result->chars);
     result->capacity = 0;
 }
 
-
-
-long get_file_size(const char* filename) {
+long get_file_size(const char *filename)
+{
     struct stat st;
-    if (stat(filename, &st) == 0) {
+    if (stat(filename, &st) == 0)
+    {
         return st.st_size;
     }
     return -1;
 }
 
-void* thread_rle(void* arg) {
-    ThreadData* data = (ThreadData*)arg;
+void add_entry(Result *result, int count, char c)
+{
+    if (result->entries == result->capacity)
+    {
+        result->capacity *= 2;
+        result->counts = realloc(result->counts, result->capacity * sizeof(int));
+        result->chars = realloc(result->chars, result->capacity * sizeof(char));
+    }
+    result->counts[result->entries] = count;
+    result->chars[result->entries] = c;
+    result->entries++;
+}
+
+void *thread_rle(void *arg)
+{
+    ThreadData *data = (ThreadData *)arg;
     long start = data->start_offset;
     long end = data->end_offset;
-    Result* result = data->r;
-    char* file_data = data->file_data;
-    
+    Result *result = data->r;
+    char *file_data = data->file_data;
+
     int count = 1;
     char current;
     char c;
@@ -95,193 +110,266 @@ void* thread_rle(void* arg) {
     current = c;
     count = 1;
     start++;
-    
-    // Process the rest 
-    while (start < end) {
+
+    // Process the rest
+    while (start < end)
+    {
         c = file_data[start];
-        // if we encounter a new character restart the count 
-        if (c != current) {
+        // if we encounter a new character restart the count
+        if (c != current)
+        {
             add_entry(result, count, current);
             current = c;
             count = 1;
-        } else {
+        }
+        else
+        {
             count++;
         }
         start++;
     }
-    
-    if (count > 0) {
-        data->last_char = current;
-        data->last_count = count;
-        if (start == end) {
-            add_entry(result, count, current);
-        }
-    }
-    
-    data->first_char = result->chars[0];
-    data->first_count = result->counts[0];
 
-    // pthread_mutex_unlock(&mutex);
-    
+    if (count > 0 && start == end)
+        add_entry(result, count, current);
+    // update that this thread has finished. Exit condition for main thread
+    pthread_mutex_lock(thread_count_m);
+    threads_done++;
+    pthread_mutex_unlock(thread_count_m);
+    // notify that this thread is done working such that other threads can spawn.
+    sem_post(thread_s);
     return NULL;
 }
 
-Result* merge(Result* results[], int num_results) {
-    long estimated_total = 0;
-    for (int i = 0; i < num_results; i++) {
-        estimated_total += results[i]->entries;
-    }
-
-    Result* merged = init_result(estimated_total);
-
-    char last_char = 0;
-    int last_count = 0;
-    int first = 1; 
-
-    for (int i = 0; i < num_results; i++) {
-        Result* r = results[i];
-        for (int j = 0; j < r->entries; j++) {
-            char c = r->chars[j];
-            int count = r->counts[j];
-
-            if (first) {
-                last_char = c;
-                last_count = count;
-                first = 0;
-            } else if (c == last_char) {
-                // Merge with previous
-                last_count += count;
-            } else {
-                // Push previous and start new
-                add_entry(merged, last_count, last_char);
-                last_char = c;
-                last_count = count;
-            }
+void merge(Result **result_LL)
+{
+    Result *result_iter = *result_LL;
+    while (result_iter->next != NULL && result_iter->next->entries != 0)
+    {
+        if (result_iter->chars[result_iter->entries - 1] == result_iter->next->chars[0])
+        {
+            result_iter->counts[result_iter->entries - 1] += result_iter->next->counts[0];
+            result_iter->next->start = 1;
+        }
+        // edge case where next is a single entry that was absorbed by the result_iter
+        // THIS section is 100% responsible for the error we are seeing...
+        // something about merging the last result is causing errors...
+        // or something to do with files of size 1?
+        if (!(result_iter->next->entries - result_iter->next->start))
+        {
+            Result *temp = result_iter->next;
+            result_iter->next = result_iter->next->next;
+            free(temp);
+        }
+        else
+        {
+            result_iter = result_iter->next;
         }
     }
-
-    // Push the final accumulated entry
-    if (!first) {
-        add_entry(merged, last_count, last_char);
-    }
-
-    return merged;
 }
 
-void write_results(Result* big_result) {
-    for (int j = 0; j < big_result->entries; j++) {
-        fwrite(&big_result->counts[j], 4, 1, stdout);
-        fwrite(&big_result->chars[j], 1, 1, stdout);
+void write_results(Result *result_LL)
+{
+    // this could very easily be adapted to work with LL, might want to do this
+    Result *result_iter = result_LL;
+    while (result_iter->next != NULL && result_iter->entries > 0)
+    {
+        for (int i = result_iter->start; i < result_iter->entries; i++)
+        {
+            fwrite(&result_iter->counts[i], 4, 1, stdout);
+            fwrite(&result_iter->chars[i], 1, 1, stdout);
+        }
+        result_iter = result_iter->next;
     }
 }
 
-void per_file(Result* results_array[], int file_num, char* filename, int num_threads){
-    int fd = open(filename, O_RDONLY); 
-
-    long file_size = get_file_size(filename); 
+ThreadData **init_threadData_array(Result** head_iter_ptr, char *filename, long file_size, int threads_per_file)
+{
+    // initialize threaddata objects for use in threads
+    int fd = open(filename, O_RDONLY);
     int use_mmap = file_size > SMALL_FILE_THRESHOLD;
-    int chunk = file_size / num_threads; 
-    // threads first 
-    pthread_t threads[num_threads];
-    ThreadData* threads_d[num_threads]; 
-    char* data = NULL;
+    int chunk = file_size / threads_per_file;
+    // threads first
+    // pthread_t threads[num_threads];
+    ThreadData **threads_d = malloc(threads_per_file * sizeof(ThreadData));
+    char *data = NULL;
 
-    if (use_mmap) {
-        // mmap the entire file 
+    Result *curr_iter = *head_iter_ptr;
+
+    if (use_mmap)
+    {
+        // mmap the entire file
         data = mmap(NULL, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
     }
-    else {
-        data = malloc(file_size); 
-        ssize_t read_bytes = read(fd, data, file_size);
-        read_bytes = read_bytes; 
+    else
+    {
+        data = malloc(file_size);
+        long bytes_read = read(fd, data, file_size);
+        if(bytes_read == -1) {
+            exit(bytes_read); //error has occured
+        }
     }
-
-    for(int i = 0; i < num_threads; i++) {
+    for (int i = 0; i < threads_per_file; i++)
+    {
         threads_d[i] = malloc(sizeof(ThreadData));
-        threads_d[i]->thread_id = i;
-        threads_d[i]->filename = filename; 
+        threads_d[i]->filename = filename;
         threads_d[i]->file_data = data;
-        threads_d[i]->boundary_merged = 0; 
         threads_d[i]->start_offset = (chunk * i);
-        threads_d[i]->r = results_array[i+file_num*num_threads];
-        if (i != num_threads - 1) {
-            threads_d[i]->end_offset = (chunk * (i+1));  
-        } else {
+        threads_d[i]->r = curr_iter;
+
+        curr_iter->next = init_result(SMALL_FILE_THRESHOLD / 4);
+        curr_iter = curr_iter->next;
+
+        if (i != threads_per_file - 1)
+        {
+            threads_d[i]->end_offset = (chunk * (i + 1));
+        }
+        else
+        {
             threads_d[i]->end_offset = file_size;
         }
-        pthread_create(&threads[i], NULL, thread_rle, threads_d[i]); 
     }
-    
-    // wait for all threads to finish...
-    for (int i = 0; i < num_threads; i++) {
-        pthread_join(threads[i], NULL); 
-    }
-
-    if (use_mmap) {
-        munmap(data, file_size); 
-    }
-    else {
-        free(data); 
-    }
+    *head_iter_ptr = curr_iter;
     close(fd); 
-    
+    return threads_d;
 }
 
-int main(int argc, char **argv) {
+void per_file(Result *results_array[], int file_num, char *filename, int num_threads)
+{
+    int fd = open(filename, O_RDONLY);
+
+    long file_size = get_file_size(filename);
+    int use_mmap = file_size > SMALL_FILE_THRESHOLD;
+    int chunk = file_size / num_threads;
+    // threads first
+    pthread_t threads[num_threads];
+    ThreadData *threads_d[num_threads];
+    char *data = NULL;
+
+    if (use_mmap)
+    {
+        // mmap the entire file
+        data = mmap(NULL, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    }
+    else
+    {
+        data = malloc(file_size);
+        ssize_t read_bytes = read(fd, data, file_size);
+        read_bytes = read_bytes;
+    }
+
+    for (int i = 0; i < num_threads; i++)
+    {
+        threads_d[i] = malloc(sizeof(ThreadData));
+        threads_d[i]->filename = filename;
+        threads_d[i]->file_data = data;
+        threads_d[i]->start_offset = (chunk * i);
+        threads_d[i]->r = results_array[i + file_num * num_threads];
+        if (i != num_threads - 1)
+        {
+            threads_d[i]->end_offset = (chunk * (i + 1));
+        }
+        else
+        {
+            threads_d[i]->end_offset = file_size;
+        }
+        pthread_create(&threads[i], NULL, thread_rle, threads_d[i]);
+    }
+
+    // wait for all threads to finish...
+    for (int i = 0; i < num_threads; i++)
+    {
+        pthread_join(threads[i], NULL);
+    }
+
+    if (use_mmap)
+    {
+        munmap(data, file_size);
+    }
+    else
+    {
+        free(data);
+    }
+    close(fd);
+}
+
+/*
+        El Plan
+        One file and ALL threads
+        partition sections based on file_size and num_threads
+        Each thread runs RLE on its section and returns a Results struct
+        We merge connected results
+        We then move on to next file
+        repeat until out of files...
+        We write to disk.
+    */
+
+int main(int argc, char **argv)
+{
     // If there aren't enough arguments, exit with error.
-    if (argc < 2) {
+    if (argc < 2)
+    {
         printf("wpzip: numOfThreads file1 [file2 ...]\n");
         exit(1);
     }
-    /* El Plan
-    One file and ALL threads
-    partition sections based on file_size and num_threads
-    Each thread runs RLE on its section and returns a Results struct
-    We merge connected results
-    We then move on to next file
-    repeat until out of files...
-    We write to disk.
-    */
 
+    int num_files = (argc - 2);
     int num_threads = atoi(argv[1]);
-    int num_files = (argc-2);
-
-    int min_chunk_size = 2048;
-    long largest_file = 0;
-    for (int i = 2; i < argc; i++) {
-        long sz = get_file_size(argv[i]);
-        if (sz > largest_file) {
-            largest_file = sz; 
-        }
-    }
-
-    if (num_threads == 0) {
+    if (num_threads == 0)
+    {
         num_threads = sysconf(_SC_NPROCESSORS_ONLN);
     }
 
-    // Adjust threads based on largest file
-    int lower_bound_threads = largest_file / min_chunk_size;
-    if (lower_bound_threads < 1) lower_bound_threads = 1;
-    if (num_threads > lower_bound_threads)
-    num_threads = lower_bound_threads;
+    thread_count_m = malloc(sizeof(pthread_mutex_t));
+    thread_s = malloc(sizeof(sem_t));
+    sem_init(thread_s, 0, num_threads);
+    pthread_mutex_init(thread_count_m, NULL);
 
-    Result* results_array[num_threads*num_files];
-    for(int i = 0; i < num_threads*num_files; i++) {
-        results_array[i] = init_result(largest_file / num_threads / 2);
-    }
+    head = init_result(SMALL_FILE_THRESHOLD / 4);
+    head_iter = head;
+    int total_threads = 0;
+
+    pthread_t *thread_ids = malloc(sizeof(pthread_t) * 1000);
+    int thread_index = 0;
 
     // Go through each file.
-    for (int i = 2; i < argc; i++) {
-        char* filename = argv[i]; 
-        per_file(results_array, i-2, filename, num_threads); 
+    for (int i = 0; i < num_files; i++)
+    {
+        char *filename = argv[i + 2];
+        file_size = get_file_size(filename);
+        // dynamically allocate threads based on size
+        threads_per_file = file_size / SMALL_FILE_THRESHOLD;
+        // bind it between min and max values
+        threads_per_file = MIN(threads_per_file, num_threads);
+        threads_per_file = MAX(threads_per_file, 1);
+        total_threads += threads_per_file;
+        ThreadData **threads_d = init_threadData_array(&head_iter, filename, file_size, threads_per_file);
+
+        for (int j = 0; j < threads_per_file; j++)
+        {
+            sem_wait(thread_s);
+            pthread_create(&thread_ids[thread_index++], NULL, thread_rle, threads_d[j]);
+        }
     }
-    
-    int total_chunks = num_threads * num_files;
-    Result* final_result = merge(results_array, total_chunks);
+    // wait for all threads to finish.
+    while (threads_done != total_threads)
+    {
+        usleep(1000);
+    }
 
-    write_results(final_result);   
-
+    merge(&head);
+    write_results(head);
+    pthread_mutex_destroy(thread_count_m);
+    sem_destroy(thread_s);
+    free(thread_count_m);
+    free(thread_s);
     // Exit with success.
     exit(0);
 }
 
+/* summary of changes I wanna make
+
+    results_array should be a linked_list
+        additions need to happen in order, and should be gaurded by a primative
+    we should dynamically allocate a set of threads per file based on size
+        We should use a semaphore to gate creation of new threads
+*/
